@@ -1,0 +1,16 @@
+{
+    "ondra": {
+        "password_hash": "$2y$12$2njrqPEpIvksuSeB586\/1uzWbH4QLx5O6SO1RdY2K8C16D2YRqvAm",
+        "favorites": [
+            {
+                "id": "deed1563f58e36d8698d17ce69af27c2",
+                "title": "Universe Magic 2026",
+                "release_date": "2026-04-06",
+                "media_type": "movie",
+                "poster_path": "\/cMj5iPlb4qO6xr2M14I4HlMxc3w.jpg",
+                "media_id": 1664934,
+                "overview": ""
+            }
+        ]
+    }
+}
