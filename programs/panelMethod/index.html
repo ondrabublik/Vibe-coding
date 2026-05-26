@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panelová metoda - simulace vztlaku</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1>Simulace vztlaku profilu (panelová metoda)</h1>
+  <div class="layout">
+    <section class="card">
+      <div class="row">
+        <label for="profile">Volba profilu</label>
+        <select id="profile">
+          <option value="2412">NACA 2412</option>
+          <option value="0012">NACA 0012</option>
+          <option value="4415">NACA 4415</option>
+          <option value="custom">Vlastní NACA 4-ciferný</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="customNaca">Kód profilu (např. 2309)</label>
+        <input id="customNaca" type="text" maxlength="4" value="2309" disabled>
+      </div>
+
+      <div class="row">
+        <label for="alpha">Úhel náběhu [°]</label>
+        <div class="inline">
+          <input id="alpha" type="range" min="-15" max="20" step="0.5" value="4">
+          <span id="alphaValue" class="value-pill">4.0°</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="nPanels">Počet panelů</label>
+        <input id="nPanels" type="range" min="40" max="220" step="2" value="120">
+        <div class="inline" style="margin-top:6px;">
+          <span style="color:var(--muted);">Rozlišení</span>
+          <span id="nPanelsValue" class="value-pill">120</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <label for="velocity">Rychlost proudu V∞ [m/s]</label>
+        <input id="velocity" type="number" min="1" step="1" value="40">
+      </div>
+
+      <div class="row">
+        <label for="density">Hustota vzduchu ρ [kg/m³]</label>
+        <input id="density" type="number" min="0.3" step="0.01" value="1.225">
+      </div>
+
+      <div class="results" id="metrics"></div>
+      <p class="note">
+        Model používá 2D neviskózní panelovou metodu s podmínkou Kutta.
+        Výsledky jsou orientační a nezahrnují odtržení proudu.
+      </p>
+    </section>
+
+    <section class="viz">
+      <canvas id="airfoilCanvas" width="760" height="280"></canvas>
+      <canvas id="cpCanvas" width="760" height="240"></canvas>
+      <canvas id="pressureCanvas" width="760" height="260"></canvas>
+      <canvas id="speedIsoCanvas" width="760" height="260"></canvas>
+    </section>
+  </div>
+
+  <script>
+    const state = {
+      profile: "2412",
+      customNaca: "2309",
+      alpha: 4,
+      nPanels: 120,
+      velocity: 40,
+      density: 1.225
+    };
+
+    const profileSelect = document.getElementById("profile");
+    const customInput = document.getElementById("customNaca");
+    const alphaInput = document.getElementById("alpha");
+    const alphaLabel = document.getElementById("alphaValue");
+    const panelInput = document.getElementById("nPanels");
+    const panelLabel = document.getElementById("nPanelsValue");
+    const velocityInput = document.getElementById("velocity");
+    const densityInput = document.getElementById("density");
+    const metricsDiv = document.getElementById("metrics");
+    const airfoilCanvas = document.getElementById("airfoilCanvas");
+    const cpCanvas = document.getElementById("cpCanvas");
+    const pressureCanvas = document.getElementById("pressureCanvas");
+    const speedIsoCanvas = document.getElementById("speedIsoCanvas");
+
+    function linspace(a, b, n) {
+      const arr = [];
+      for (let i = 0; i < n; i++) {
+        arr.push(a + (b - a) * i / (n - 1));
+      }
+      return arr;
+    }
+
+    function cosineSpacing(n) {
+      const beta = linspace(0, Math.PI, n);
+      return beta.map((v) => 0.5 * (1 - Math.cos(v)));
+    }
+
+    function naca4Coordinates(code, nPoints) {
+      const digits = code.trim();
+      if (!/^\d{4}$/.test(digits)) {
+        throw new Error("NACA profil musí mít 4 číslice.");
+      }
+
+      const m = Number(digits[0]) / 100;
+      const p = Number(digits[1]) / 10;
+      const t = Number(digits.slice(2)) / 100;
+      const x = cosineSpacing(nPoints);
+      const yt = x.map((xi) =>
+        5 * t * (
+          0.2969 * Math.sqrt(xi) -
+          0.1260 * xi -
+          0.3516 * xi ** 2 +
+          0.2843 * xi ** 3 -
+          0.1036 * xi ** 4
+        )
+      );
+
+      const yc = [];
+      const dyc = [];
+      for (const xi of x) {
+        if (m === 0 || p === 0) {
+          yc.push(0);
+          dyc.push(0);
+          continue;
+        }
+        if (xi < p) {
+          yc.push((m / (p * p)) * (2 * p * xi - xi * xi));
+          dyc.push((2 * m / (p * p)) * (p - xi));
+        } else {
+          yc.push((m / ((1 - p) ** 2)) * ((1 - 2 * p) + 2 * p * xi - xi * xi));
+          dyc.push((2 * m / ((1 - p) ** 2)) * (p - xi));
+        }
+      }
+
+      const theta = dyc.map((v) => Math.atan(v));
+      const xu = x.map((xi, i) => xi - yt[i] * Math.sin(theta[i]));
+      const yu = x.map((_, i) => yc[i] + yt[i] * Math.cos(theta[i]));
+      const xl = x.map((xi, i) => xi + yt[i] * Math.sin(theta[i]));
+      const yl = x.map((_, i) => yc[i] - yt[i] * Math.cos(theta[i]));
+
+      const points = [];
+      for (let i = nPoints - 1; i >= 0; i--) {
+        points.push({ x: xu[i], y: yu[i] });
+      }
+      for (let i = 1; i < nPoints - 1; i++) {
+        points.push({ x: xl[i], y: yl[i] });
+      }
+      return points;
+    }
+
+    function panelize(points) {
+      let signedArea = 0;
+      for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        signedArea += p1.x * p2.y - p2.x * p1.y;
+      }
+      const isClockwise = signedArea < 0;
+      const circulationSign = isClockwise ? 1 : -1;
+
+      const panels = [];
+      for (let i = 0; i < points.length; i++) {
+        const p1 = points[i];
+        const p2 = points[(i + 1) % points.length];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const length = Math.hypot(dx, dy);
+        const phi = Math.atan2(dy, dx);
+        // Normala smeruje ven z profilu bez ohledu na CW/CCW orientaci bodu.
+        const nx = isClockwise ? dy / length : -dy / length;
+        const ny = isClockwise ? -dx / length : dx / length;
+        panels.push({
+          x1: p1.x, y1: p1.y,
+          x2: p2.x, y2: p2.y,
+          xc: 0.5 * (p1.x + p2.x),
+          yc: 0.5 * (p1.y + p2.y),
+          length,
+          tx: dx / length,
+          ty: dy / length,
+          nx,
+          ny,
+          phi,
+          circulationSign
+        });
+      }
+      return panels;
+    }
+
+    function getProfileCenter(points) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      return { x: 0.5 * (minX + maxX), y: 0.5 * (minY + maxY) };
+    }
+
+    function rotatePoints(points, alphaDeg, center = { x: 0.5, y: 0 }) {
+      const a = alphaDeg * Math.PI / 180;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      return points.map((p) => ({
+        x: center.x + (p.x - center.x) * c - (p.y - center.y) * s,
+        y: center.y + (p.x - center.x) * s + (p.y - center.y) * c
+      }));
+    }
+
+    function rotatePoint(x, y, alphaDeg, center = { x: 0.5, y: 0 }) {
+      const a = alphaDeg * Math.PI / 180;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      return {
+        x: center.x + (x - center.x) * c - (y - center.y) * s,
+        y: center.y + (x - center.x) * s + (y - center.y) * c
+      };
+    }
+
+    function rotateVector(u, v, alphaDeg) {
+      const a = alphaDeg * Math.PI / 180;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      return {
+        x: u * c - v * s,
+        y: -u * s - v * c
+      };
+    }
+
+    function inducedVelocityFromUnitVortex(panel, x, y) {
+      const dx = x - panel.x1;
+      const dy = y - panel.y1;
+      const c = Math.cos(panel.phi);
+      const s = Math.sin(panel.phi);
+      const xLocal = dx * c + dy * s;
+      const yLocal = -dx * s + dy * c;
+      const x2Local = xLocal - panel.length;
+      const r1 = Math.hypot(xLocal, yLocal);
+      const r2 = Math.hypot(x2Local, yLocal);
+      const th1 = Math.atan2(yLocal, xLocal);
+      const th2 = Math.atan2(yLocal, x2Local);
+
+      const eps = 1e-10;
+      const uLocal = -(th2 - th1) / (2 * Math.PI);
+      const vLocal = Math.log(Math.max(r2, eps) / Math.max(r1, eps)) / (2 * Math.PI);
+      return {
+        u: uLocal * c - vLocal * s,
+        v: uLocal * s + vLocal * c
+      };
+    }
+
+    function solveLinearSystem(A, b) {
+      const n = b.length;
+      const M = A.map((row, i) => [...row, b[i]]);
+      for (let k = 0; k < n; k++) {
+        let maxRow = k;
+        for (let r = k + 1; r < n; r++) {
+          if (Math.abs(M[r][k]) > Math.abs(M[maxRow][k])) maxRow = r;
+        }
+        [M[k], M[maxRow]] = [M[maxRow], M[k]];
+        const pivot = M[k][k];
+        if (Math.abs(pivot) < 1e-12) {
+          throw new Error("Numericky singulární systém panelové metody.");
+        }
+        for (let j = k; j <= n; j++) M[k][j] /= pivot;
+        for (let i = 0; i < n; i++) {
+          if (i === k) continue;
+          const factor = M[i][k];
+          for (let j = k; j <= n; j++) M[i][j] -= factor * M[k][j];
+        }
+      }
+      return M.map((row) => row[n]);
+    }
+
+    function findTrailingEdgePanelIndices(panels) {
+      const maxX = Math.max(...panels.map((p) => Math.max(p.x1, p.x2)));
+      const tol = 1e-4;
+      const candidates = [];
+      for (let i = 0; i < panels.length; i++) {
+        const p = panels[i];
+        const edgeMaxX = Math.max(p.x1, p.x2);
+        if (edgeMaxX >= maxX - tol) {
+          candidates.push({ idx: i, yc: p.yc, edgeMaxX });
+        }
+      }
+
+      if (candidates.length < 2) {
+        return { upperIdx: 0, lowerIdx: panels.length - 1 };
+      }
+
+      let upper = candidates[0];
+      let lower = candidates[0];
+      for (const c of candidates) {
+        if (c.yc > upper.yc) upper = c;
+        if (c.yc < lower.yc) lower = c;
+      }
+
+      if (upper.idx === lower.idx) {
+        const sorted = [...candidates].sort((a, b) => b.edgeMaxX - a.edgeMaxX || b.yc - a.yc);
+        return { upperIdx: sorted[0].idx, lowerIdx: sorted[1].idx };
+      }
+
+      return { upperIdx: upper.idx, lowerIdx: lower.idx };
+    }
+
+    function splitCpBranches(panels, cp) {
+      const upper = [];
+      const lower = [];
+      for (let i = 0; i < panels.length; i++) {
+        const point = { x: panels[i].xc, cp: cp[i] };
+        if (panels[i].yc >= 0) {
+          upper.push(point);
+        } else {
+          lower.push(point);
+        }
+      }
+      upper.sort((a, b) => a.x - b.x);
+      lower.sort((a, b) => a.x - b.x);
+      return { upper, lower };
+    }
+
+    function runPanelMethod(basePoints, alphaDeg, vInf, rho) {
+      const points = basePoints;
+      const panels = panelize(points);
+      const n = panels.length;
+      const A = Array.from({ length: n }, () => Array(n).fill(0));
+      const rhs = Array(n).fill(0);
+      const alpha = alphaDeg * Math.PI / 180;
+      const Ux = vInf * Math.cos(alpha);
+      const Uy = vInf * Math.sin(alpha);
+
+      for (let i = 0; i < n; i++) {
+        const pi = panels[i];
+        rhs[i] = -(Ux * pi.nx + Uy * pi.ny);
+        for (let j = 0; j < n; j++) {
+          if (i === j) {
+            // Pro vortex panel je vlastni prispevek do normalove rovnice nulovy (principal value).
+            A[i][j] = 0;
+          } else {
+            const v = inducedVelocityFromUnitVortex(panels[j], pi.xc, pi.yc);
+            A[i][j] = v.u * pi.nx + v.v * pi.ny;
+          }
+        }
+      }
+
+      const te = findTrailingEdgePanelIndices(panels);
+      const kuttaRow = te.lowerIdx;
+      for (let j = 0; j < n; j++) A[kuttaRow][j] = 0;
+      A[kuttaRow][te.upperIdx] = 1;
+      A[kuttaRow][te.lowerIdx] = 1;
+      rhs[kuttaRow] = 0;
+
+      const gamma = solveLinearSystem(A, rhs);
+      const cp = [];
+      let circulation = 0;
+      for (let i = 0; i < n; i++) {
+        const pi = panels[i];
+        let ut = Ux * pi.tx + Uy * pi.ty;
+        for (let j = 0; j < n; j++) {
+          if (i === j) continue;
+          const v = inducedVelocityFromUnitVortex(panels[j], pi.xc, pi.yc);
+          ut += gamma[j] * (v.u * pi.tx + v.v * pi.ty);
+        }
+        // Skok tangencialni rychlosti na vortex-sheetu.
+        ut += 0.5 * pi.circulationSign * gamma[i];
+        cp.push(1 - (ut / vInf) ** 2);
+        circulation += gamma[i] * pi.length;
+      }
+
+      const q = 0.5 * rho * vInf * vInf;
+      const cl = (2 * circulation) / vInf;
+      const liftPerSpan = q * cl;
+      return { points, panels, cp, cl, circulation, liftPerSpan, gamma, Ux, Uy, vInf, rho };
+    }
+
+    function drawAirfoil(points, alphaDeg) {
+      const ctx = airfoilCanvas.getContext("2d");
+      const { width, height } = airfoilCanvas;
+      ctx.clearRect(0, 0, width, height);
+      const center = getProfileCenter(points);
+      const visualPoints = rotatePoints(points, alphaDeg, center);
+
+      const xs = visualPoints.map((p) => p.x);
+      const ys = visualPoints.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const pad = 30;
+      const sx = (width - 2 * pad) / (maxX - minX + 1e-12);
+      const sy = (height - 2 * pad) / (maxY - minY + 1e-12);
+      const s = Math.min(sx, sy) * 0.95;
+      const cx = 0.5 * (minX + maxX);
+      const cy = 0.5 * (minY + maxY);
+
+      const tx = (x) => width / 2 + (x - cx) * s;
+      const ty = (y) => height / 2 - (y - cy) * s;
+
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, height / 2);
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+
+      ctx.fillStyle = "rgba(56, 189, 248, 0.18)";
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(tx(visualPoints[0].x), ty(visualPoints[0].y));
+      for (let i = 1; i < visualPoints.length; i++) {
+        ctx.lineTo(tx(visualPoints[i].x), ty(visualPoints[i].y));
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = "#f3f4f6";
+      ctx.font = "13px Segoe UI";
+      ctx.fillText("Geometrie profilu", 14, 22);
+    }
+
+    function drawCp(panels, cp) {
+      const ctx = cpCanvas.getContext("2d");
+      const { width, height } = cpCanvas;
+      ctx.clearRect(0, 0, width, height);
+      const branches = splitCpBranches(panels, cp);
+      const cmin = Math.min(...cp, -1.5);
+      const cmax = Math.max(...cp, 1.2);
+
+      const padL = 56;
+      const padR = 20;
+      const padT = 22;
+      const padB = 34;
+
+      const tx = (v) => padL + (width - padL - padR) * v;
+      const ty = (v) => padT + (height - padT - padB) * (1 - (v - cmin) / (cmax - cmin + 1e-12));
+
+      ctx.strokeStyle = "#334155";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(padL, padT, width - padL - padR, height - padT - padB);
+
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "12px Segoe UI";
+      ctx.fillText("Cp", 8, 16);
+      ctx.fillText("x/c", width - 34, height - 8);
+
+      // Osa x/c
+      const xTicks = 6;
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "10px Segoe UI";
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= xTicks; i++) {
+        const xv = i / xTicks;
+        const xpix = tx(xv);
+        ctx.beginPath();
+        ctx.moveTo(xpix, height - padB);
+        ctx.lineTo(xpix, height - padB + 4);
+        ctx.stroke();
+        ctx.fillText(xv.toFixed(1), xpix - 9, height - padB + 16);
+      }
+
+      // Osa Cp
+      const yTicks = 6;
+      for (let i = 0; i <= yTicks; i++) {
+        const cv = cmin + (cmax - cmin) * i / yTicks;
+        const ypix = ty(cv);
+        ctx.beginPath();
+        ctx.moveTo(padL - 4, ypix);
+        ctx.lineTo(padL, ypix);
+        ctx.stroke();
+        ctx.fillText(cv.toFixed(2), 4, ypix + 3);
+      }
+
+      const drawBranch = (branch, color) => {
+        if (branch.length === 0) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tx(branch[0].x), ty(branch[0].cp));
+        for (let i = 1; i < branch.length; i++) {
+          ctx.lineTo(tx(branch[i].x), ty(branch[i].cp));
+        }
+        ctx.stroke();
+      };
+
+      drawBranch(branches.upper, "#f97316");
+      drawBranch(branches.lower, "#22d3ee");
+
+      ctx.fillStyle = "#f97316";
+      ctx.fillRect(width - 148, 14, 10, 10);
+      ctx.fillStyle = "#22d3ee";
+      ctx.fillRect(width - 148, 30, 10, 10);
+      ctx.fillStyle = "#cbd5e1";
+      ctx.font = "11px Segoe UI";
+      ctx.fillText("upper", width - 132, 23);
+      ctx.fillText("lower", width - 132, 39);
+
+      const zeroY = ty(0);
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padL, zeroY);
+      ctx.lineTo(width - padR, zeroY);
+      ctx.stroke();
+    }
+
+    function pointInPolygon(x, y, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x;
+        const yi = polygon[i].y;
+        const xj = polygon[j].x;
+        const yj = polygon[j].y;
+        const intersects = ((yi > y) !== (yj > y)) &&
+          (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi);
+        if (intersects) inside = !inside;
+      }
+      return inside;
+    }
+
+    function velocityAtPointInSolverFrame(x, y, panels, gamma, Ux, Uy) {
+      let u = Ux;
+      let v = Uy;
+      for (let j = 0; j < panels.length; j++) {
+        const pj = panels[j];
+        const dv = inducedVelocityFromUnitVortex(pj, x, y);
+        u += gamma[j] * dv.u;
+        v += gamma[j] * dv.v;
+      }
+      return { u, v };
+    }
+
+    function makeFieldGrid(res, alphaDeg, nx = 150, ny = 90) {
+      const pressure = Array.from({ length: ny }, () => Array(nx).fill(null));
+      const speed = Array.from({ length: ny }, () => Array(nx).fill(null));
+      const center = getProfileCenter(res.points);
+      const visualPolygon = rotatePoints(res.points, alphaDeg, center);
+      const polyX = visualPolygon.map((p) => p.x);
+      const polyY = visualPolygon.map((p) => p.y);
+      const minX = Math.min(...polyX);
+      const maxX = Math.max(...polyX);
+      const minY = Math.min(...polyY);
+      const maxY = Math.max(...polyY);
+      const chord = Math.max(maxX - minX, 1e-6);
+      const thickness = Math.max(maxY - minY, 1e-6);
+      const xMargin = 0.22 * chord + 0.05;
+      const yMargin = Math.max(0.35 * chord, 2.4 * thickness);
+      const domain = {
+        minX: minX - xMargin,
+        maxX: maxX + xMargin,
+        minY: minY - yMargin,
+        maxY: maxY + yMargin
+      };
+
+      for (let iy = 0; iy < ny; iy++) {
+        const y = domain.minY + (domain.maxY - domain.minY) * iy / (ny - 1);
+        for (let ix = 0; ix < nx; ix++) {
+          const x = domain.minX + (domain.maxX - domain.minX) * ix / (nx - 1);
+          if (pointInPolygon(x, y, visualPolygon)) continue;
+
+          const solverPoint = rotatePoint(x, y, -alphaDeg, center);
+          const vel = velocityAtPointInSolverFrame(
+            solverPoint.x,
+            solverPoint.y,
+            res.panels,
+            res.gamma,
+            res.Ux,
+            res.Uy
+          );
+          const vmag = Math.hypot(vel.u, vel.v);
+          const cp = 1 - (vmag / res.vInf) ** 2;
+          pressure[iy][ix] = 0.5 * res.rho * res.vInf * res.vInf * cp;
+          speed[iy][ix] = vmag;
+        }
+      }
+      return { domain, pressure, speed, polygon: visualPolygon, center };
+    }
+
+    function fieldToCanvasTransform(canvas, domain) {
+      const pad = { l: 46, r: 16, t: 20, b: 26 };
+      const w = canvas.width;
+      const h = canvas.height;
+      const plotW = w - pad.l - pad.r;
+      const plotH = h - pad.t - pad.b;
+      const rangeX = domain.maxX - domain.minX;
+      const rangeY = domain.maxY - domain.minY;
+      const scale = Math.min(plotW / (rangeX + 1e-12), plotH / (rangeY + 1e-12));
+      const usedW = scale * rangeX;
+      const usedH = scale * rangeY;
+      const offX = pad.l + 0.5 * (plotW - usedW);
+      const offY = pad.t + 0.5 * (plotH - usedH);
+      return {
+        tx: (x) => offX + scale * (x - domain.minX),
+        ty: (y) => offY + scale * (domain.maxY - y),
+        frame: { x: offX, y: offY, w: usedW, h: usedH }
+      };
+    }
+
+    function drawStreamlines(canvas, grid, res, alphaDeg, title) {
+      const ctx = canvas.getContext("2d");
+      const { width, height } = canvas;
+      ctx.clearRect(0, 0, width, height);
+      const { tx, ty, frame } = fieldToCanvasTransform(canvas, grid.domain);
+      const inDomain = (x, y) =>
+        x >= grid.domain.minX && x <= grid.domain.maxX && y >= grid.domain.minY && y <= grid.domain.maxY;
+      const dirFromVisualPoint = (x, y) => {
+        const solverPoint = rotatePoint(x, y, -alphaDeg, grid.center);
+        const velSolver = velocityAtPointInSolverFrame(
+          solverPoint.x,
+          solverPoint.y,
+          res.panels,
+          res.gamma,
+          res.Ux,
+          res.Uy
+        );
+        // Do vizualniho ramecku (rotovany profil) prevadime vektor opacnou rotaci,
+        // aby volny proud zustal vodorovny a proudnice nebyly zkreslene.
+        const velVisual = rotateVector(velSolver.u, velSolver.v, -alphaDeg);
+        const mag = Math.hypot(velVisual.x, velVisual.y);
+        if (mag < 1e-9) return null;
+        return { ux: velVisual.x / mag, uy: velVisual.y / mag };
+      };
+      const trace = (x0, y0, sign) => {
+        const pts = [{ x: x0, y: y0 }];
+        const ds = 0.006;
+        for (let k = 0; k < 1000; k++) {
+          const last = pts[pts.length - 1];
+          if (!inDomain(last.x, last.y)) break;
+          if (pointInPolygon(last.x, last.y, grid.polygon)) break;
+          const dir = dirFromVisualPoint(last.x, last.y);
+          if (!dir) break;
+          const nx = last.x + sign * ds * dir.ux;
+          const ny = last.y + sign * ds * dir.uy;
+          const mx = 0.5 * (last.x + nx);
+          const my = 0.5 * (last.y + ny);
+          if (pointInPolygon(mx, my, grid.polygon)) break;
+          if (!inDomain(nx, ny) || pointInPolygon(nx, ny, grid.polygon)) break;
+          pts.push({ x: nx, y: ny });
+        }
+        return pts;
+      };
+
+      ctx.fillStyle = "#050b18";
+      ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 1.0;
+
+      const seeds = 32;
+      for (let i = 0; i < seeds; i++) {
+        const y0 = grid.domain.minY + (grid.domain.maxY - grid.domain.minY) * (i + 0.5) / seeds;
+        const x0 = grid.domain.minX + 0.02;
+        if (pointInPolygon(x0, y0, grid.polygon)) continue;
+        const fwd = trace(x0, y0, 1);
+        const bwd = trace(x0, y0, -1);
+        const full = [...bwd.reverse(), ...fwd.slice(1)];
+        if (full.length < 2) continue;
+        ctx.beginPath();
+        ctx.moveTo(tx(full[0].x), ty(full[0].y));
+        for (let k = 1; k < full.length; k++) {
+          ctx.lineTo(tx(full[k].x), ty(full[k].y));
+        }
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(tx(grid.polygon[0].x), ty(grid.polygon[0].y));
+      for (let i = 1; i < grid.polygon.length; i++) {
+        ctx.lineTo(tx(grid.polygon[i].x), ty(grid.polygon[i].y));
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.fillStyle = "#e2e8f0";
+      ctx.font = "12px Segoe UI";
+      ctx.fillText(title, 12, 16);
+      ctx.strokeStyle = "#334155";
+      ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+    }
+
+    function contourSegmentsForCell(x0, y0, x1, y1, f00, f10, f11, f01, level) {
+      const edges = [];
+      const interp = (xa, ya, fa, xb, yb, fb) => {
+        const t = (level - fa) / (fb - fa + 1e-12);
+        return { x: xa + t * (xb - xa), y: ya + t * (yb - ya) };
+      };
+
+      if ((f00 - level) * (f10 - level) < 0) edges.push(interp(x0, y0, f00, x1, y0, f10));
+      if ((f10 - level) * (f11 - level) < 0) edges.push(interp(x1, y0, f10, x1, y1, f11));
+      if ((f11 - level) * (f01 - level) < 0) edges.push(interp(x1, y1, f11, x0, y1, f01));
+      if ((f01 - level) * (f00 - level) < 0) edges.push(interp(x0, y1, f01, x0, y0, f00));
+
+      if (edges.length === 2) return [[edges[0], edges[1]]];
+      if (edges.length === 4) return [[edges[0], edges[1]], [edges[2], edges[3]]];
+      return [];
+    }
+
+    function drawPressureContours(canvas, grid, title) {
+      const ctx = canvas.getContext("2d");
+      const { width, height } = canvas;
+      ctx.clearRect(0, 0, width, height);
+
+      const ny = grid.pressure.length;
+      const nx = grid.pressure[0].length;
+      const values = [];
+      for (let iy = 0; iy < ny; iy++) {
+        for (let ix = 0; ix < nx; ix++) {
+          const v = grid.pressure[iy][ix];
+          if (v !== null) values.push(v);
+        }
+      }
+      const pMin = Math.min(...values);
+      const pMax = Math.max(...values);
+      const levels = 25;
+      const levelValues = [];
+      for (let k = 1; k <= levels; k++) {
+        levelValues.push(pMin + (pMax - pMin) * k / (levels + 1));
+      }
+
+      const { tx, ty, frame } = fieldToCanvasTransform(canvas, grid.domain);
+      const dx = (grid.domain.maxX - grid.domain.minX) / (nx - 1);
+      const dy = (grid.domain.maxY - grid.domain.minY) / (ny - 1);
+
+      ctx.fillStyle = "#050b18";
+      ctx.fillRect(frame.x, frame.y, frame.w, frame.h);
+
+      for (let li = 0; li < levelValues.length; li++) {
+        const level = levelValues[li];
+        const hue = 200 - Math.round(180 * li / Math.max(levelValues.length - 1, 1));
+        ctx.strokeStyle = `hsl(${hue}, 85%, 58%)`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+
+        for (let iy = 0; iy < ny - 1; iy++) {
+          const y0 = grid.domain.minY + iy * dy;
+          const y1 = y0 + dy;
+          for (let ix = 0; ix < nx - 1; ix++) {
+            const x0 = grid.domain.minX + ix * dx;
+            const x1 = x0 + dx;
+            const f00 = grid.pressure[iy][ix];
+            const f10 = grid.pressure[iy][ix + 1];
+            const f11 = grid.pressure[iy + 1][ix + 1];
+            const f01 = grid.pressure[iy + 1][ix];
+            if (f00 === null || f10 === null || f11 === null || f01 === null) continue;
+            const segs = contourSegmentsForCell(x0, y0, x1, y1, f00, f10, f11, f01, level);
+            for (const seg of segs) {
+              ctx.moveTo(tx(seg[0].x), ty(seg[0].y));
+              ctx.lineTo(tx(seg[1].x), ty(seg[1].y));
+            }
+          }
+        }
+        ctx.stroke();
+      }
+
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      ctx.moveTo(tx(grid.polygon[0].x), ty(grid.polygon[0].y));
+      for (let i = 1; i < grid.polygon.length; i++) {
+        ctx.lineTo(tx(grid.polygon[i].x), ty(grid.polygon[i].y));
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      ctx.fillStyle = "#e2e8f0";
+      ctx.font = "12px Segoe UI";
+      ctx.fillText(title, 12, 16);
+      ctx.fillText(`p_min: ${pMin.toFixed(1)} Pa`, width - 176, 16);
+      ctx.fillText(`p_max: ${pMax.toFixed(1)} Pa`, width - 176, 32);
+      ctx.strokeStyle = "#334155";
+      ctx.strokeRect(frame.x, frame.y, frame.w, frame.h);
+    }
+
+    function updateMetrics(res) {
+      metricsDiv.innerHTML = "";
+      const items = [
+        ["Koeficient vztlaku CL", res.cl.toFixed(4)],
+        ["Cirkulace Γ [m²/s]", res.circulation.toFixed(4)],
+        ["Vztlak na jednotku rozpětí L' [N/m]", res.liftPerSpan.toFixed(2)],
+        ["Panelů", String(res.panels.length)]
+      ];
+      for (const [label, value] of items) {
+        const div = document.createElement("div");
+        div.className = "metric";
+        div.innerHTML = `<span>${label}</span><b>${value}</b>`;
+        metricsDiv.appendChild(div);
+      }
+    }
+
+    function activeProfileCode() {
+      return state.profile === "custom" ? state.customNaca : state.profile;
+    }
+
+    function simulate() {
+      try {
+        const code = activeProfileCode();
+        const points = naca4Coordinates(code, Math.floor(state.nPanels / 2) + 1);
+        const res = runPanelMethod(points, state.alpha, state.velocity, state.density);
+        drawAirfoil(res.points, state.alpha);
+        drawCp(res.panels, res.cp);
+        const field = makeFieldGrid(res, state.alpha);
+        drawStreamlines(pressureCanvas, field, res, state.alpha, "Proudnice v okoli profilu");
+        drawPressureContours(speedIsoCanvas, field, "Izočary tlakoveho pole (25 hladin)");
+        updateMetrics(res);
+      } catch (err) {
+        metricsDiv.innerHTML = `<div style="color:#fca5a5;">${err.message}</div>`;
+      }
+    }
+
+    profileSelect.addEventListener("change", () => {
+      state.profile = profileSelect.value;
+      customInput.disabled = state.profile !== "custom";
+      simulate();
+    });
+
+    customInput.addEventListener("input", () => {
+      state.customNaca = customInput.value;
+      if (state.profile === "custom") simulate();
+    });
+
+    alphaInput.addEventListener("input", () => {
+      state.alpha = Number(alphaInput.value);
+      alphaLabel.textContent = `${state.alpha.toFixed(1)}°`;
+      simulate();
+    });
+
+    panelInput.addEventListener("input", () => {
+      state.nPanels = Number(panelInput.value);
+      panelLabel.textContent = String(state.nPanels);
+      simulate();
+    });
+
+    velocityInput.addEventListener("input", () => {
+      state.velocity = Math.max(1, Number(velocityInput.value) || 1);
+      simulate();
+    });
+
+    densityInput.addEventListener("input", () => {
+      state.density = Math.max(0.1, Number(densityInput.value) || 1.225);
+      simulate();
+    });
+
+    simulate();
+  </script>
+</body>
+</html>

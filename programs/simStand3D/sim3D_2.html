@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3D results</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg:#f7fafc; --card:#ffffff; --muted:#6b7280 }
+    body {
+      font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, Arial;
+      background: var(--bg);
+      margin: 0;
+      padding: 32px;
+      color: #0f172a;
+    }
+    .container { max-width: 800px; margin: 0 auto }
+    h1 { margin: 0 0 12px; font-size: 20px }
+    .note { color: var(--muted); margin-bottom: 20px }
+    figure {
+      background: var(--card);
+      padding: 12px;
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+      margin: 0 0 16px;
+      overflow: hidden;
+    }
+    figcaption { font-weight: 600; margin-bottom: 8px }
+    a img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 8px;
+      transition: opacity .2s ease;
+    }
+    a:hover img { opacity: .9 }
+    label, select { font-size: 16px; margin-bottom: 20px; }
+    @media (max-width:480px){ body{padding:16px}; h1{font-size:18px} }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>3D results for inlet angle of attack 5�</h1>
+    <p class="note">Click for full resolution.</p>
+
+    <label for="velocitySelect"><strong>Select inlet velocity:</strong></label>
+    <select id="velocitySelect">
+      <option value="10">10 m/s</option>
+      <option value="20" selected>20 m/s</option>
+    </select>
+
+    <div id="results"></div>
+  </div>
+
+  <script>
+    const resultsContainer = document.getElementById('results');
+    const select = document.getElementById('velocitySelect');
+
+    // Definuj seznam obrázků pro každou rychlost
+    const data = {
+      "10": [
+        { caption: "Main inlet velocity is 10 m/s. Figures show dependency on the secondary velocity.", file: "distribution.png" },
+        { caption: "xz plane: velocity magnitude", file: "10/5deg_vel10_velocity2.png" },
+        { caption: "Velocity detail", file: "10/5deg_vel10_velocity_detail.png" },
+        { caption: "Pressure detail", file: "10/5deg_vel10_pressure_detail.png" },
+        { caption: "Pressure distribution along the blade", file: "10/5deg_vel10_pressure_profile.png" },
+        { caption: "Streamlines", file: "10/5deg_vel10_3Dstreamlines.png" }
+      ],
+      "20": [
+        { caption: "Main inlet velocity is 20 m/s. Figures show dependency on the secondary velocity.", file: "distribution.png" },
+        { caption: "xz plane: velocity magnitude", file: "20/5deg_Plane2_vel.png" },
+        { caption: "xz plane: x-velocity", file: "20/5deg_Plane2_velX.png" },
+        { caption: "xz plane: z-velocity", file: "20/5deg_Plane2_velZ.png" },
+        { caption: "xz plane: pressure", file: "20/5deg_Plane2_press.png" },
+        { caption: "xy plane: velocity", file: "20/5deg_Plane1_vel.png" },
+        { caption: "xy plane: pressure", file: "20/5deg_Plane1_press.png" },
+        { caption: "Velocity detail", file: "20/5deg_velocity_detail.png" },
+        { caption: "Pressure detail", file: "20/5deg_pressure_detail.png" },
+        { caption: "Pressure distribution along the blade", file: "20/5deg_pressure_profile.png" }
+      ]
+    };
+
+    function renderResults(speed) {
+      resultsContainer.innerHTML = "";
+      data[speed].forEach(item => {
+        const fig = document.createElement('figure');
+        fig.innerHTML = `
+          <figcaption>${item.caption}</figcaption>
+          <a href="${item.file}" target="_blank">
+            <img src="${item.file}" alt="${item.caption}">
+          </a>`;
+        resultsContainer.appendChild(fig);
+      });
+    }
+
+    select.addEventListener('change', e => {
+      renderResults(e.target.value);
+    });
+
+    // NaÄŤti vĂ˝chozĂ­ hodnotu
+    renderResults(select.value);
+  </script>
+</body>
+</html>

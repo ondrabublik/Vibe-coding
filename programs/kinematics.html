@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Canvas Editor with Sim Mode</title>
+  <style>
+    body {
+      display: flex;
+      font-family: sans-serif;
+    }
+    #controls {
+      margin-left: 20px;
+    }
+    canvas {
+      border: 1px solid #000;
+    }
+    button {
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      width: 120px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      background-color: lightgray;
+    }
+    .active {
+      background-color: lightgreen !important;
+    }
+    #infoBox {
+      margin-top: 20px;
+      font-size: 14px;
+      border-top: 1px solid #ccc;
+      padding-top: 10px;
+    }
+    label {
+      display: block;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="myCanvas" width="2000" height="1000"></canvas>
+  <div id="controls">
+    <button id="insertPoint">Insert Point</button><br>
+    <button id="insertBar">Insert Bar</button><br>
+    <div id="infoBox"></div><br>
+    <button id="simModeBtn">Sim Mode</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("myCanvas");
+    const ctx = canvas.getContext("2d");
+    const CM = 37.8;
+    const points = [];
+    const bars = [];
+  
+    let mode = null;
+    let selectedPoint = null;
+    let selectedBar = null;
+    let draggingPoint = null;
+    let tempBarStart = null;
+  
+    let simMode = false;
+    const barRestLengths = new Map();
+    let savedPositions = [];
+  
+    const btnPoint = document.getElementById("insertPoint");
+    const btnBar = document.getElementById("insertBar");
+    const simModeBtn = document.getElementById("simModeBtn");
+    const infoBox = document.getElementById("infoBox");
+  
+    const restartBtn = document.createElement("button");
+    restartBtn.textContent = "Restart";
+    restartBtn.style.display = "block";
+    restartBtn.style.marginTop = "5px";
+    restartBtn.onclick = () => {
+      if (savedPositions.length === points.length) {
+        for (let i = 0; i < points.length; i++) {
+          points[i].x = savedPositions[i].x;
+          points[i].y = savedPositions[i].y;
+        }
+        drawAll();
+        updateInfoBox();
+      }
+    };
+    simModeBtn.insertAdjacentElement("afterend", restartBtn);
+  
+    btnPoint.onclick = () => {
+      if (mode === "point") {
+        mode = null;
+        btnPoint.classList.remove("active");
+      } else {
+        mode = "point";
+        btnPoint.classList.add("active");
+        btnBar.classList.remove("active");
+      }
+      clearSelection();
+      updateInfoBox();
+    };
+  
+    btnBar.onclick = () => {
+      if (mode === "bar") {
+        mode = null;
+        btnBar.classList.remove("active");
+        tempBarStart = null;
+      } else {
+        mode = "bar";
+        btnBar.classList.add("active");
+        btnPoint.classList.remove("active");
+      }
+      clearSelection();
+      updateInfoBox();
+    };
+  
+    simModeBtn.onclick = () => {
+  if (!simMode) {
+    // Při pokusu o aktivaci Sim Mode ověřit, zda je alespoň jeden bod pevný
+    const hasFixedPoint = points.some(p => p.fixed);
+    if (!hasFixedPoint) {
+      alert("At least one point must be fixed");
+      return; // Neaktivovat sim mode
+    }
+  }
+
+  simMode = !simMode;
+  simModeBtn.classList.toggle("active", simMode);
+
+  // Deaktivace a odmáčknutí ostatních tlačítek
+  btnPoint.disabled = simMode;
+  btnBar.disabled = simMode;
+  btnPoint.classList.remove("active");
+  btnBar.classList.remove("active");
+
+  // Reset výběru a režimu
+  if (simMode) {
+    mode = null;
+    clearSelection();
+    // Uložení původních pozic
+    savedPositions = points.map(p => ({ x: p.x, y: p.y }));
+    // Uložení klidových délek
+    barRestLengths.clear();
+    for (let bar of bars) {
+      const len = Math.hypot(bar.p1.x - bar.p2.x, bar.p1.y - bar.p2.y);
+      barRestLengths.set(bar, len);
+    }
+  }
+
+  updateInfoBox();
+  drawAll();
+};
+
+    canvas.addEventListener("mousedown", onMouseDown);
+    canvas.addEventListener("mousemove", onMouseMove);
+    canvas.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("keydown", onKeyDown);
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "#ddd";
+      ctx.lineWidth = 1;
+      ctx.font = "10px sans-serif";
+
+      for (let x = 0; x <= canvas.width; x += CM) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+        ctx.fillStyle = "black";
+        ctx.fillText((x / CM).toFixed(0) + "cm", x + 2, 10);
+      }
+
+      for (let y = 0; y <= canvas.height; y += CM) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+        ctx.fillStyle = "black";
+        ctx.fillText((y / CM).toFixed(0) + "cm", 2, y - 2);
+      }
+    }
+
+    function drawAll() {
+      drawGrid();
+      ctx.lineWidth = 3;
+      ctx.font = "12px sans-serif";
+
+      for (let i = 0; i < bars.length; i++) {
+        const bar = bars[i];
+        ctx.beginPath();
+        ctx.moveTo(bar.p1.x, bar.p1.y);
+        ctx.lineTo(bar.p2.x, bar.p2.y);
+        ctx.strokeStyle = bar === selectedBar ? "green" : "blue";
+        ctx.stroke();
+
+        const midX = (bar.p1.x + bar.p2.x) / 2;
+        const midY = (bar.p1.y + bar.p2.y) / 2;
+        ctx.fillStyle = "black";
+        ctx.fillText(i, midX + 5, midY - 5);
+      }
+
+      for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
+        ctx.fillStyle = p.fixed ? "black" : (p === selectedPoint ? "green" : "red");
+        ctx.fill();
+        ctx.fillStyle = "black";
+        ctx.fillText(i, p.x + 8, p.y - 8);
+      }
+    }
+
+    function getMousePos(evt) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top
+      };
+    }
+
+    function findPoint(pos) {
+      return points.find(p => {
+        const dx = p.x - pos.x;
+        const dy = p.y - pos.y;
+        return Math.sqrt(dx * dx + dy * dy) < 8;
+      });
+    }
+
+    function findBar(pos) {
+      for (let bar of bars) {
+        const {p1, p2} = bar;
+        const d = distanceToSegment(pos, p1, p2);
+        if (d < 6) return bar;
+      }
+      return null;
+    }
+
+    function distanceToSegment(p, v, w) {
+      const l2 = (w.x - v.x) ** 2 + (w.y - v.y) ** 2;
+      if (l2 === 0) return Math.hypot(p.x - v.x, p.y - v.y);
+      let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
+    }
+
+    function clearSelection() {
+      selectedPoint = null;
+      selectedBar = null;
+    }
+
+    function onMouseDown(evt) {
+  const pos = getMousePos(evt);
+  if (mode === "point") {
+    const p = findPoint(pos);
+    if (p) {
+      selectedPoint = p;
+      draggingPoint = p.fixed ? null : p;
+    } else {
+      const newP = {x: pos.x, y: pos.y, fixed: false};
+      points.push(newP);
+      selectedPoint = newP; // <-- vybrat nový bod
+      draggingPoint = null;
+    }
+    selectedBar = null; // <-- zajistit že není vybrána žádná tyč
+  } else if (mode === "bar") {
+    const p = findPoint(pos);
+    if (p) {
+      if (!tempBarStart) {
+        tempBarStart = p;
+      } else if (p !== tempBarStart) {
+        const newBar = {p1: tempBarStart, p2: p};
+        bars.push(newBar);
+        selectedBar = newBar; // <-- vybrat novou tyč
+        selectedPoint = null;
+        tempBarStart = null;
+      }
+    } else {
+      const b = findBar(pos);
+      if (b) {
+        selectedBar = b;
+        selectedPoint = null;
+      } else {
+        clearSelection();
+      }
+    }
+  } else {
+    const b = findBar(pos);
+    if (b) {
+      selectedBar = b;
+      selectedPoint = null;
+    }
+    const p = findPoint(pos);
+    if (p) {
+      selectedPoint = p;
+      draggingPoint = p.fixed ? null : p;
+    }
+  }
+  drawAll();
+  updateInfoBox(); // <-- ZAJISTIT AKTUALIZACI INFORMACÍ
+}
+
+
+    function onMouseMove(evt) {
+      if (draggingPoint) {
+        const pos = getMousePos(evt);
+        draggingPoint.x = pos.x;
+        draggingPoint.y = pos.y;
+        if (simMode) minimizeEnergy();
+        drawAll();
+        updateInfoBox();
+      }
+    }
+
+    function onMouseUp(evt) {
+      draggingPoint = null;
+    }
+
+    function onKeyDown(evt) {
+      if (evt.key === "Delete") {
+        if (selectedPoint) {
+          const index = points.indexOf(selectedPoint);
+          if (index >= 0) {
+            for (let i = bars.length - 1; i >= 0; i--) {
+              if (bars[i].p1 === selectedPoint || bars[i].p2 === selectedPoint) {
+                bars.splice(i, 1);
+              }
+            }
+            points.splice(index, 1);
+            selectedPoint = null;
+          }
+        } else if (selectedBar) {
+          const index = bars.indexOf(selectedBar);
+          if (index >= 0) {
+            bars.splice(index, 1);
+            selectedBar = null;
+          }
+        }
+        drawAll();
+        updateInfoBox();
+      }
+    }
+
+    function updateInfoBox() {
+      infoBox.innerHTML = "";
+
+      if (selectedPoint) {
+        const i = points.indexOf(selectedPoint);
+        const x = selectedPoint.x;
+        const y = selectedPoint.y;
+        const fixed = selectedPoint.fixed;
+
+        infoBox.innerHTML = `
+          <strong>Bod #${i}</strong><br>
+          <label>X: ${x.toFixed(1)} px (${(x / CM).toFixed(2)} cm)</label>
+          <label>Y: ${y.toFixed(1)} px (${(y / CM).toFixed(2)} cm)</label>
+          <label>
+            <input type="checkbox" id="fixedCheckbox" ${fixed ? "checked" : ""}>
+            Fixed
+          </label>
+        `;
+
+        document.getElementById("fixedCheckbox").onchange = function () {
+          selectedPoint.fixed = this.checked;
+          drawAll();
+        };
+
+      } else if (selectedBar) {
+        const i = bars.indexOf(selectedBar);
+        const p1 = selectedBar.p1;
+        const p2 = selectedBar.p2;
+        const i1 = points.indexOf(p1);
+        const i2 = points.indexOf(p2);
+        const lengthPx = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        const lengthCm = lengthPx / CM;
+
+        infoBox.innerHTML = `
+          <strong>Bar #${i}</strong><br>
+          <label>Point A: ${i1}</label>
+          <label>Point B: ${i2}</label>
+          <label>Délka: ${lengthPx.toFixed(1)} px (${lengthCm.toFixed(2)} cm)</label>
+        `;
+      }
+    }
+
+    function minimizeEnergy() {
+      const learningRate = 0.1;
+      const maxIter = 100;
+      const tol = 1e-4;
+
+      for (let iter = 0; iter < maxIter; iter++) {
+        const gradients = new Map();
+
+        for (let p of points) {
+          if (!p.fixed && p !== draggingPoint) {
+            gradients.set(p, {x: 0, y: 0});
+          }
+        }
+
+        for (let bar of bars) {
+          const {p1, p2} = bar;
+          const restLen = barRestLengths.get(bar);
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const dist = Math.hypot(dx, dy);
+          const diff = dist - restLen;
+
+          if (dist === 0) continue;
+
+          const dEdx = (2 * diff * dx) / dist;
+          const dEdy = (2 * diff * dy) / dist;
+
+          if (!p1.fixed && p1 !== draggingPoint && gradients.has(p1)) {
+            gradients.get(p1).x += -dEdx;
+            gradients.get(p1).y += -dEdy;
+          }
+          if (!p2.fixed && p2 !== draggingPoint && gradients.has(p2)) {
+            gradients.get(p2).x += dEdx;
+            gradients.get(p2).y += dEdy;
+          }
+        }
+
+        let maxGrad = 0;
+        for (let [p, grad] of gradients.entries()) {
+          p.x -= learningRate * grad.x;
+          p.y -= learningRate * grad.y;
+          maxGrad = Math.max(maxGrad, Math.abs(grad.x), Math.abs(grad.y));
+        }
+
+        if (maxGrad < tol) break;
+      }
+    }
+
+    drawAll();
+  </script>
+</body>
+</html>

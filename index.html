@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vibe coding</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --card: #121a33;
+      --text: #e8ecf1;
+      --muted: #9fb0c3;
+      --accent: #7cc4ff;
+      --accent-2: #9ef0b8;
+      --border: rgba(255,255,255,0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 10% -10%, rgba(124,196,255,0.15), transparent 60%),
+                  radial-gradient(1000px 500px at 110% -10%, rgba(158,240,184,0.12), transparent 60%),
+                  var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      max-width: 960px; margin: 32px auto 16px; padding: 0 16px;
+    }
+
+    h1 { margin: 0 0 8px; font-size: clamp(24px, 3vw, 34px); letter-spacing: 0.3px; }
+    .subtitle { color: var(--muted); margin: 0 0 12px; }
+
+    .toolbar {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+    }
+    .search {
+      flex: 1 1 260px;
+      background: var(--card); border: 1px solid var(--border); color: var(--text);
+      padding: 12px 14px; border-radius: 14px; outline: none; font-size: 16px;
+    }
+    .counter { color: var(--muted); font-size: 14px; }
+
+    .grid {
+      max-width: 960px; margin: 8px auto 64px; padding: 0 16px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid var(--border);
+      border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px;
+      transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+    .card:hover { transform: translateY(-2px); border-color: rgba(124,196,255,0.4); box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+
+    .title { font-weight: 700; font-size: 18px; }
+    .desc { color: var(--muted); font-size: 14px; line-height: 1.4; }
+
+    .actions { display: flex; gap: 10px; align-items: center; margin-top: auto; }
+    .open-btn, .copy-btn {
+      appearance: none; border: 1px solid var(--border); background: var(--card); color: var(--text);
+      padding: 10px 12px; border-radius: 12px; cursor: pointer; font-size: 14px;
+      transition: transform .12s ease, border-color .15s ease, background .15s ease;
+    }
+    .open-btn:hover, .copy-btn:hover { border-color: rgba(124,196,255,0.5); }
+    .open-btn:active, .copy-btn:active { transform: translateY(1px); }
+
+    .open-btn { border-color: rgba(124,196,255,0.4); }
+
+    footer { max-width: 960px; margin: 0 auto 48px; padding: 0 16px; color: var(--muted); font-size: 13px; }
+    code.inline { background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vibe coding</h1>
+    <p class="subtitle">This page contains an overview of programs generated using AI.</p>
+    <div class="toolbar">
+      <input id="search" class="search" type="search" placeholder="Find" aria-label="Hledat" />
+      <span id="counter" class="counter"></span>
+    </div>
+  </header>
+
+  <main class="grid" id="grid" aria-live="polite"></main>
+
+  <footer>
+    <p>💡 Created in my free time! :-)
+    </p>
+  </footer>
+
+  <script>
+    // 1) SEM PŘIDEJTE SVÉ PROGRAMY
+    // href může být relativní cesta (např. "./apps/ivanova-simulace/index.html") nebo absolutní URL
+    const PROGRAMY = [
+      { title: "Kinematic", desc: "Interactive simulation of mechanism kinematic", href: "programs/kinematics.html" },
+      { title: "Splitter", desc: "Splits inserted file into parts", href: "programs/splitter.html" },
+      { title: "2D simulation results", desc: "2D simulation of the IT stand", href: "programs/simStand2D/index.html" },
+      { title: "3D simulation results", desc: "3D simulation of the IT stand", href: "programs/simStand3D/sim3D_2.html" },
+      { title: "2D LBM simulator", desc: "Incompressible fluid flow simulator", href: "programs/LBM.html" },
+      { title: "2D smoke simulator", desc: "Smoke simulator", href: "programs/smoke.html" },
+    ];
+
+    // 2) RENDER
+    const grid = document.getElementById('grid');
+    const search = document.getElementById('search');
+    const counter = document.getElementById('counter');
+
+    function render(items) {
+      grid.innerHTML = '';
+      items.forEach((item, i) => {
+        const card = document.createElement('article');
+        card.className = 'card';
+        card.tabIndex = 0;
+        card.setAttribute('role', 'group');
+        card.setAttribute('aria-labelledby', `t-${i}`);
+        card.setAttribute('aria-describedby', `d-${i}`);
+
+        const h3 = document.createElement('div');
+        h3.className = 'title';
+        h3.id = `t-${i}`;
+        h3.textContent = item.title;
+
+        const p = document.createElement('div');
+        p.className = 'desc';
+        p.id = `d-${i}`;
+        p.textContent = item.desc;
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+
+        const openBtn = document.createElement('a');
+        openBtn.className = 'open-btn';
+        openBtn.textContent = 'Open program';
+        openBtn.href = item.href;
+        openBtn.rel = 'noopener noreferrer';
+        openBtn.addEventListener('click', e => e.stopPropagation());
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn';
+        copyBtn.type = 'button';
+        copyBtn.title = 'Kopírovat odkaz';
+        copyBtn.textContent = 'Copy refference';
+        copyBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try {
+            await navigator.clipboard.writeText(new URL(item.href, location.href).href);
+            copyBtn.textContent = 'Coppied!';
+            setTimeout(() => copyBtn.textContent = 'Kopírovat odkaz', 1200);
+          } catch (err) {
+            alert('Nepodařilo se zkopírovat odkaz.');
+          }
+        });
+
+        actions.append(openBtn, copyBtn);
+
+        // Umožnit otevření klikem na celou kartu i klávesou Enter
+        card.addEventListener('click', () => window.location.href = item.href);
+        card.addEventListener('keydown', (e) => { if (e.key === 'Enter') window.location.href = item.href; });
+
+        card.append(h3, p, actions);
+        grid.append(card);
+      });
+
+      counter.textContent = `${items.length} items`; // jednoduchý počítadlo
+    }
+
+    // 3) FILTR PODLE HLEDÁNÍ
+    function applyFilter() {
+      const q = search.value.trim().toLowerCase();
+      if (!q) return render(PROGRAMY);
+      const filtered = PROGRAMY.filter(x =>
+        x.title.toLowerCase().includes(q) || x.desc.toLowerCase().includes(q)
+      );
+      render(filtered);
+    }
+
+    search.addEventListener('input', applyFilter);
+
+    // start
+    render(PROGRAMY);
+  </script>
+</body>
+</html>

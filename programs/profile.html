@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Interaktivní síť okolo profilu</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;display:flex;gap:16px;margin:12px}
+    #canvasWrap{position:relative}
+    canvas{border:1px solid #ccc;background:#fff}
+    .controls{max-width:360px}
+    label{display:block;margin-top:8px}
+    input[type=range]{width:100%}
+    button{margin-top:8px}
+    .hint{font-size:0.9rem;color:#444}
+  </style>
+</head>
+<body>
+  <div id="canvasWrap">
+    <canvas id="view" width="900" height="700"></canvas>
+  </div>
+  <div class="controls">
+    <h3>Profil & síť</h3>
+    <div class="hint">Táhněte body (modré = horní, červené = spodní). Síť se automaticky přegeneruje.</div>
+    <label>Počet bodů profilu (n): <input id="npoints" type="number" value="34" min="6" max="200"></label>
+    <label>a: <input id="a" type="range" min="-0.4" max="0.6" step="0.01" value="0.0"></label>
+    <label>b: <input id="b" type="range" min="-0.4" max="0.6" step="0.01" value="0.0"></label>
+    <label>c: <input id="c" type="range" min="-0.4" max="0.6" step="0.01" value="0.0"></label>
+    <label>d: <input id="d" type="range" min="-0.4" max="0.6" step="0.01" value="0.0"></label>
+    <button id="btnGen">Generovat Bezier profil</button>
+    <label><input id="showMesh" type="checkbox" checked> Zobrazit síť</label>
+    <label><input id="showProfile" type="checkbox" checked> Zobrazit profil</label>
+    <label><input id="reduceIter" type="checkbox"> Menší počet iterací pro rychlejší odezvu</label>
+    <div style="margin-top:8px"><button id="btnReset">Reset změn</button></div>
+  </div>
+
+<script>
+// Přepis MATLAB funkcí do JavaScriptu a jednoduché interaktivní UI.
+// Poznámka: Eliptická generace je náročná; defaultně použiju 200 iterací (MATLAB měl 500).
+
+// --- Matematické pomocné funkce ---
+function linspace(a,b,n){const r=[]; if(n===1){r.push(a);return r} for(let i=0;i<n;i++){r.push(a + (b-a)*i/(n-1))} return r}
+function zeros(n,m){const A=[]; for(let i=0;i<n;i++){A.push(new Array(m).fill(0))} return A}
+function clone2d(A){return A.map(row=>row.slice())}
+
+// --- Bezier Curve (přepis z MATLAB) ---
+function bezierCurve(N,P){ // P: array of control points [[x,y],...]
+  const Np = P.length;
+  const u = linspace(0,1,N);
+  // compute Bernstein-like matrix B and extra B1 term
+  // Use combination function
+  function nCk(n,k){let num=1,den=1; for(let i=0;i<k;i++){num*= (n-i); den*= (i+1);} return Math.round(num/den)}
+  const S = [];
+  for(let t=0;t<N;t++){
+    let x=0,y=0;
+    for(let i=0;i<Np;i++){
+      const bern = nCk(Np,i) * Math.pow(u[t], i) * Math.pow(1-u[t], Np-i);
+      x += bern * P[i][0];
+      y += bern * P[i][1];
+    }
+    // B1 term (last) as in MATLAB implementation
+    const B1 = nCk(Np,Np) * Math.pow(u[t], Np);
+    x += B1 * P[Np-1][0];
+    y += B1 * P[Np-1][1];
+    S.push([x,y]);
+  }
+  return S;
+}
+
+// --- AlgebGen ---
+function AlgebGen(Xin,Yin){
+  const n1 = Xin.length;
+  const n2 = Xin[0].length;
+  const F = new Array(n1), N=new Array(n2);
+  for(let i=0;i<n1;i++) F[i] = (i)/(n1-1);
+  for(let j=0;j<n2;j++) N[j] = (j)/(n2-1);
+  const Xp = zeros(n1,n2); const Yp = zeros(n1,n2);
+  for(let i=0;i<n1;i++){
+    for(let j=0;j<n2;j++){
+      Xp[i][j] = (1-F[i])*Xin[0][j] + F[i]*Xin[n1-1][j] + (1-N[j])*Xin[i][0] + N[j]*Xin[i][n2-1]
+        - (1-F[i])*(1-N[j])*Xin[0][0] - F[i]*(1-N[j])*Xin[n1-1][0] - (1-F[i])*N[j]*Xin[0][n2-1] - F[i]*N[j]*Xin[n1-1][n2-1];
+      Yp[i][j] = (1-F[i])*Yin[0][j] + F[i]*Yin[n1-1][j] + (1-N[j])*Yin[i][0] + N[j]*Yin[i][n2-1]
+        - (1-F[i])*(1-N[j])*Yin[0][0] - F[i]*(1-N[j])*Yin[n1-1][0] - (1-F[i])*N[j]*Yin[0][n2-1] - F[i]*N[j]*Yin[n1-1][n2-1];
+    }
+  }
+  return {X:Xp,Y:Yp};
+}
+
+// --- ElipticGen4 (upraveno pro výkon) ---
+function ElipticGen4(Xin,Yin,iterations=200){
+  let X = clone2d(Xin); let Y = clone2d(Yin);
+  const a = 1e5; const c = 0.3;
+  const n1 = X.length; const n2 = X[0].length;
+  const xeta=zeros(n1,n2), yeta=zeros(n1,n2), xxi=zeros(n1,n2), yxi=zeros(n1,n2), Jac=zeros(n1,n2);
+  const g11=zeros(n1,n2), g22=zeros(n1,n2), g12=zeros(n1,n2);
+  const xtemp=zeros(n1,n2), ytemp=zeros(n1,n2);
+  const PP=zeros(n1,n2), QQ=zeros(n1,n2);
+
+  // precompute QQ column-wise as in matlab
+  for(let j=1;j<n2-1;j++){
+    for(let i=0;i<n1;i++){
+      QQ[i][j] = - a * Math.sign(j) * Math.exp(-c*Math.abs(j)) - a * Math.sign(j-(n2-1)) * Math.exp(-c*Math.abs(j-(n2-1)));
+    }
+  }
+
+  const I = []; for(let i=1;i<n1-1;i++) I.push(i);
+  const J = []; for(let j=1;j<n2-1;j++) J.push(j);
+
+  for(let op=0; op<iterations; op++){
+    for(let ii=1; ii<n1-1; ii++){
+      for(let jj=1; jj<n2-1; jj++){
+        xeta[ii][jj] = (X[ii][jj+1]-X[ii][jj-1])/2;
+        yeta[ii][jj] = (Y[ii][jj+1]-Y[ii][jj-1])/2;
+        xxi[ii][jj]  = (X[ii+1][jj]-X[ii-1][jj])/2;
+        yxi[ii][jj]  = (Y[ii+1][jj]-Y[ii-1][jj])/2;
+        Jac[ii][jj] = xxi[ii][jj]*yeta[ii][jj] - xeta[ii][jj]*yxi[ii][jj];
+      }
+    }
+    for(let ii=1; ii<n1-1; ii++){
+      for(let jj=1; jj<n2-1; jj++){
+        g11[ii][jj] = ((X[ii+1][jj]-X[ii-1][jj])**2 + (Y[ii+1][jj]-Y[ii-1][jj])**2)/4;
+        g22[ii][jj] = ((X[ii][jj+1]-X[ii][jj-1])**2 + (Y[ii][jj+1]-Y[ii][jj-1])**2)/4;
+        g12[ii][jj] = ((X[ii+1][jj]-X[ii-1][jj])*(X[ii][jj+1]-X[ii][jj-1]) + (Y[ii+1][jj]-Y[ii-1][jj])*(Y[ii][jj+1]-Y[ii][jj-1]))/4;
+        const denom = 2*(g11[ii][jj]+g22[ii][jj]);
+        if(denom===0) continue;
+        const term1x = (g22[ii][jj]*X[ii+1][jj] - 0.5*g12[ii][jj]*X[ii+1][jj+1] + 0.5*g12[ii][jj]*X[ii+1][jj-1] + g11[ii][jj]*X[ii][jj+1] + g11[ii][jj]*X[ii][jj-1] + g22[ii][jj]*X[ii-1][jj] - 0.5*g12[ii][jj]*X[ii-1][jj-1] + 0.5*g12[ii][jj]*X[ii-1][jj+1]);
+        const term1y = (g22[ii][jj]*Y[ii+1][jj] - 0.5*g12[ii][jj]*Y[ii+1][jj+1] + 0.5*g12[ii][jj]*Y[ii+1][jj-1] + g11[ii][jj]*Y[ii][jj+1] + g11[ii][jj]*Y[ii][jj-1] + g22[ii][jj]*Y[ii-1][jj] - 0.5*g12[ii][jj]*Y[ii-1][jj-1] + 0.5*g12[ii][jj]*Y[ii-1][jj+1]);
+        xtemp[ii][jj] = term1x/denom + (Jac[ii][jj]*Jac[ii][jj])*(xxi[ii][jj]*PP[ii][jj] + xeta[ii][jj]*QQ[ii][jj]);
+        ytemp[ii][jj] = term1y/denom + (Jac[ii][jj]*Jac[ii][jj])*(yxi[ii][jj]*PP[ii][jj] + yeta[ii][jj]*QQ[ii][jj]);
+      }
+    }
+    // copy back
+    let err=0;
+    for(let ii=1; ii<n1-1; ii++){
+      for(let jj=1; jj<n2-1; jj++){
+        err += (X[ii][jj]-xtemp[ii][jj])**2 + (Y[ii][jj]-ytemp[ii][jj])**2;
+        X[ii][jj] = xtemp[ii][jj];
+        Y[ii][jj] = ytemp[ii][jj];
+      }
+    }
+    // optional early stop
+    if(op%20===0 && err<1e-6) break;
+  }
+  return {X,Y};
+}
+
+// --- mesh7_for_python přepis ---
+function mesh7_for_js(xyd,xyh, options={m:64,n:90,H:1,alfa:0}){
+  const H = options.H||1; const alfa = (options.alfa||0)/180*Math.PI;
+  const m = options.m||64; const n = options.n||90;
+  // prof = [xyh(end:-1:1,:);xyd(2:end,:)]
+  const prof = [];
+  for(let i=xyh.length-1;i>=0;i--) prof.push([xyh[i][0],xyh[i][1]]);
+  for(let i=1;i<xyd.length;i++) prof.push([xyd[i][0],xyd[i][1]]);
+  // transformace
+  for(let i=0;i<prof.length;i++){
+    const x = prof[i][0], y=prof[i][1];
+    prof[i][0] = Math.cos(alfa)*x - Math.sin(alfa)*y;
+    prof[i][1] = Math.sin(alfa)*x + Math.cos(alfa)*y;
+  }
+  const n_prof = prof.length;
+  const npr = n;
+  // Id = npr:n_prof; Ih = npr:-1:1
+  const Id = []; for(let i=npr-1;i<n_prof;i++) Id.push(i);
+  const Ih = []; for(let i=npr-1;i>=0;i--) Ih.push(i);
+  const Xh = Ih.map(i=>prof[i]);
+  const Xd = Id.map(i=>prof[i]);
+
+  // predni napojeni
+  const np = 48;
+  const t1 = linspace(0,1,np);
+  const P0 = Xh[0];
+  console.log(Xh)
+  const P2 = [P0[0]-H/2, P0[1]];
+  const Xp = t1.map(t=>[(1-t)*P2[0]+t*P0[0], (1-t)*P2[1]+t*P0[1]]);
+
+  // zadni napojeni
+  const nz = 56;
+  const t2 = linspace(0,2,nz);
+  const L = -0.5;
+  const P0z = Xh[npr-1];
+  const P2z = [P0z[0] + (H-0.5), P0z[1] + L];
+  const Xz = t2.map(t=>[(1-t)*P0z[0] + t*P2z[0], (1-t)*P0z[1] + t*P2z[1]]);
+
+  const nx = nz + npr + np - 2;
+  const ny = m;
+  const X = zeros(nx,ny), Y=zeros(nx,ny), B=zeros(nx,ny);
+  // predni
+  for(let i=0;i<np-1;i++){
+    X[i][0] = Xp[i][0]; X[i][ny-1] = Xp[i][0];
+    Y[i][0] = Xp[i][1]; Y[i][ny-1] = Xp[i][1]+H;
+  }
+  // profil
+  for(let i=0;i<npr;i++){
+    X[i+np-1][0] = Xd[i][0]; X[i+np-1][ny-1] = Xh[i][0];
+    Y[i+np-1][0] = Xd[i][1]; Y[i+np-1][ny-1] = Xh[i][1]+H;
+    B[i+np-1][0] = 1; B[i+np-1][ny-1] = 1;
+  }
+  // zadni cast
+  for(let i=1;i<nz;i++){
+    X[i+np+npr-2][0] = Xz[i][0]; X[i+np+npr-2][ny-1] = Xz[i][0];
+    Y[i+np+npr-2][0] = Xz[i][1]; Y[i+np+npr-2][ny-1] = Xz[i][1]+H;
+  }
+  // vstup/vystup
+  for(let j=1;j<ny-1;j++){
+    const t=(j)/(ny-1);
+    X[0][j] = (1-t)*X[0][0] + t*X[0][ny-1];
+    Y[0][j] = (1-t)*Y[0][0] + t*Y[0][ny-1];
+    X[nx-1][j] = (1-t)*X[nx-1][0] + t*X[nx-1][ny-1];
+    Y[nx-1][j] = (1-t)*Y[nx-1][0] + t*Y[nx-1][ny-1];
+  }
+
+  // algebraic + elliptic
+  const A = AlgebGen(X,Y);
+  const E = ElipticGen4(A.X,A.Y, (window.reduceIterChecked?120:200) );
+  return {Xout:E.X, Yout:E.Y, B};
+}
+
+// --- UI / interaktivita ---
+const canvas = document.getElementById('view'); const ctx = canvas.getContext('2d');
+let scale=500, offsetX=50, offsetY=350; // pro převod souřadnic
+
+function toCanvas(p){ return [offsetX + p[0]*scale, offsetY - p[1]*scale]; }
+function fromCanvas(px,py){ return [(px-offsetX)/scale, (offsetY-py)/scale]; }
+
+// výchozí Bezier params (kopie z MATLAB skriptu)
+let controlP1 = [[0,0.5],[0,0.55],[0.2, 0+ (1-0.2)/2],[0.5,0.5],[1,0.05],[1,0]];
+let controlP2 = [[0,0.5],[0,0.45],[0.2, 0+ (1-0.2)/2],[0.5,0.5],[1,-0.05],[1,0]];
+
+let xyd=[], xyh=[]; // profile points
+let dragged = null; // {type:'h'|'d', idx}
+let mesh = null;
+
+function genProfileFromSliders(){
+  const n = parseInt(document.getElementById('npoints').value,10);
+  const a = parseFloat(document.getElementById('a').value);
+  const b = parseFloat(document.getElementById('b').value);
+  const c = parseFloat(document.getElementById('c').value);
+  const d = parseFloat(document.getElementById('d').value);
+  // build control points similar to generateProfileBezier3
+  const a0 = (1-0.2)/2; const c0 = 0.5/2;
+  const p1 = [[0,0.5],[0,0.55],[0.2, a + a0],[0.5, c + c0],[1,0.05],[1,0]];
+  const p2 = [[0,0.5],[0,0.45],[0.2, b + a0],[0.5, d + c0],[1,-0.05],[1,0]];
+  xyd = bezierCurve(n,p1); xyh = bezierCurve(n,p2);
+  drawAll();
+}
+
+function resetProfiles(){ genProfileFromSliders(); }
+
+function drawAll(){
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+  // axes
+  ctx.save(); ctx.strokeStyle='#eee'; ctx.beginPath(); ctx.moveTo(0,offsetY); ctx.lineTo(canvas.width,offsetY); ctx.stroke(); ctx.restore();
+
+  if(document.getElementById('showMesh').checked){
+    try{
+      mesh = mesh7_for_js(xyd,xyh);
+      drawMesh(mesh);
+    }catch(e){ console.warn('mesh error',e); }
+  }
+  if(document.getElementById('showProfile').checked){ drawProfile(); }
+}
+
+function drawMesh(mesh){
+  const X = mesh.Xout, Y=mesh.Yout; const nx=X.length, ny=X[0].length;
+  ctx.save(); ctx.globalAlpha=0.6; ctx.lineWidth=1; ctx.strokeStyle='#888';
+  // draw lines in j-direction
+  for(let i=0;i<nx;i++){
+    ctx.beginPath(); for(let j=0;j<ny;j++){ const p=toCanvas([X[i][j], Y[i][j]]); if(j===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); } ctx.stroke();
+  }
+  // i-direction
+  for(let j=0;j<ny;j++){
+    ctx.beginPath(); for(let i=0;i<nx;i++){ const p=toCanvas([X[i][j], Y[i][j]]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); } ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawProfile(){
+  // spodni - red
+  ctx.save(); ctx.lineWidth=2; ctx.beginPath(); for(let i=0;i<xyd.length;i++){ const p=toCanvas(xyd[i]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); } ctx.strokeStyle='rgba(200,0,0,0.9)'; ctx.stroke();
+  // horni - blue
+  ctx.beginPath(); for(let i=0;i<xyh.length;i++){ const p=toCanvas(xyh[i]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); } ctx.strokeStyle='rgba(0,50,200,0.9)'; ctx.stroke();
+  // points
+  for(let i=0;i<xyd.length;i++){ const p=toCanvas(xyd[i]); drawHandle(p[0],p[1],'red'); }
+  for(let i=0;i<xyh.length;i++){ const p=toCanvas(xyh[i]); drawHandle(p[0],p[1],'blue'); }
+  ctx.restore();
+}
+function drawHandle(x,y,color){ ctx.beginPath(); ctx.fillStyle=color; ctx.arc(x,y,5,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='#222'; ctx.stroke(); }
+
+canvas.addEventListener('mousedown', e=>{
+  const rect = canvas.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
+  // find nearest point among all profile points
+  let best=null, bestDist=12;
+  for(let i=0;i<xyd.length;i++){const p=toCanvas(xyd[i]); const d=Math.hypot(p[0]-x,p[1]-y); if(d<bestDist){bestDist=d; best={type:'d',idx:i};}}
+  for(let i=0;i<xyh.length;i++){const p=toCanvas(xyh[i]); const d=Math.hypot(p[0]-x,p[1]-y); if(d<bestDist){bestDist=d; best={type:'h',idx:i};}}
+  if(best){ dragged=best; }
+});
+canvas.addEventListener('mousemove', e=>{
+  if(!dragged) return; const rect = canvas.getBoundingClientRect(); const x=e.clientX-rect.left, y=e.clientY-rect.top;
+  const p = fromCanvas(x,y);
+  if(dragged.type==='d'){ xyd[dragged.idx][0]=p[0]; xyd[dragged.idx][1]=p[1]; }
+  else { xyh[dragged.idx][0]=p[0]; xyh[dragged.idx][1]=p[1]; }
+  drawAll();
+});
+canvas.addEventListener('mouseup', e=>{ dragged=null; });
+canvas.addEventListener('mouseleave', e=>{ dragged=null; });
+
+// UI events
+document.getElementById('btnGen').addEventListener('click', ()=>{ genProfileFromSliders(); });
+document.getElementById('btnReset').addEventListener('click', ()=>{ resetProfiles(); });
+document.getElementById('reduceIter').addEventListener('change', (ev)=>{ window.reduceIterChecked = ev.target.checked; drawAll(); });
+
+// initialize
+window.reduceIterChecked = false; genProfileFromSliders();
+
+</script>
+</body>
+</html>

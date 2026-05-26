@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <title>C64 BASIC (mini)</title>
+  <style>
+    body { margin:0; background:#4030A0; color:#6C5EB5;
+           font-family:monospace; font-size:20px; }
+    #screen { padding:40px; white-space:pre-wrap; word-wrap:break-word; }
+    .cursor { display:inline-block; width:10px; background:#6C5EB5; 
+              animation:blink 1s step-start infinite; }
+    @keyframes blink { 50% { background:transparent; } }
+  </style>
+</head>
+<body>
+  <div id="screen"></div>
+  <script>
+    const screen = document.getElementById("screen");
+    let buffer = "";
+    let program = {}; // uložené řádky programu podle čísla
+
+    function print(text="") {
+      screen.insertAdjacentText("beforeend", text + "\n");
+      screen.scrollTop = screen.scrollHeight;
+    }
+
+    function prompt() {
+      print("READY.");
+      screen.appendChild(cursor);
+      screen.scrollTop = screen.scrollHeight;
+    }
+
+    function runProgram() {
+      const lines = Object.keys(program).map(Number).sort((a,b)=>a-b);
+      for (let i of lines) {
+        const line = program[i];
+        if (line.startsWith("PRINT")) {
+          const msg = line.substring(5).trim().replace(/^"|"$/g,"");
+          print(msg);
+        }
+      }
+      prompt();
+    }
+
+    function listProgram() {
+      const lines = Object.keys(program).map(Number).sort((a,b)=>a-b);
+      for (let i of lines) {
+        print(i + " " + program[i]);
+      }
+      prompt();
+    }
+
+    // kurzor MUSÍ být vytvořen dřív než se volá prompt()
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+
+    // inicializace
+    print(" **** COMMODORE 64 BASIC V2 ****\n");
+    print(" 64K RAM SYSTEM  38911 BASIC BYTES FREE\n");
+    prompt();
+
+    document.addEventListener("keydown", (e)=>{
+      if (e.key.length === 1) {
+        buffer += e.key.toUpperCase();
+        cursor.insertAdjacentText("beforebegin", e.key.toUpperCase());
+      } else if (e.key === "Enter") {
+        screen.insertAdjacentText("beforeend","\n");
+        let line = buffer.trim();
+        if (/^\d+/.test(line)) {
+          // řádek s číslem -> uložit do programu
+          const num = parseInt(line);
+          program[num] = line.replace(/^\d+\s*/,"");
+        } else {
+          // příkaz
+          if (line === "RUN") runProgram();
+          else if (line === "LIST") listProgram();
+          else if (line.startsWith("PRINT")) {
+            const msg = line.substring(5).trim().replace(/^"|"$/g,"");
+            print(msg);
+            prompt();
+          } else {
+            print("SYNTAX ERROR");
+            prompt();
+          }
+        }
+        buffer="";
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        buffer = buffer.slice(0,-1);
+        if (cursor.previousSibling?.nodeType === Node.TEXT_NODE) {
+          let t = cursor.previousSibling.textContent;
+          cursor.previousSibling.textContent = t.slice(0,-1);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Náhrada \n za nový řádek</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 40px;
+    background-color: #f4f4f4;
+  }
+  textarea {
+    width: 100%;
+    height: 150px;
+    font-family: monospace;
+    font-size: 14px;
+    padding: 10px;
+    box-sizing: border-box;
+    margin-bottom: 10px;
+  }
+  button {
+    display: block;
+    padding: 10px 20px;
+    font-size: 16px;
+    margin: 10px 0;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<h2>Náhrada \n za nový řádek</h2>
+
+<label for="inputText">Vstupní text:</label>
+<textarea id="inputText" placeholder="Sem vlož text obsahující \n"></textarea>
+
+<button onclick="nahradEnter()">Převeď text</button>
+
+<label for="outputText">Výsledek:</label>
+<textarea id="outputText" placeholder="Zde se zobrazí převedený text" readonly></textarea>
+
+<script>
+function nahradEnter() {
+  const input = document.getElementById("inputText").value;
+  // Nahradí všechny výskyty \n (i \\n) skutečným novým řádkem
+  const output = input.replace(/\\n/g, "\n");
+  document.getElementById("outputText").value = output;
+}
+</script>
+
+</body>
+</html>

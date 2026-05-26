@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>3D results</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#f7fafc;--card:#ffffff;--muted:#6b7280}
+    body{font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,Arial;background:var(--bg);margin:0;padding:32px;color:#0f172a}
+    .container{max-width:800px;margin:0 auto}
+    h1{margin:0 0 12px;font-size:20px}
+    .note{color:var(--muted);margin-bottom:20px}
+    figure{background:var(--card);padding:12px;border-radius:10px;box-shadow:0 6px 18px rgba(15,23,42,0.06);margin:0 0 16px;overflow:hidden}
+    figcaption{font-weight:600;margin-bottom:8px}
+    a img{display:block;width:100%;height:auto;border-radius:8px;transition:opacity .2s ease}
+    a:hover img{opacity:.9}
+    @media (max-width:480px){body{padding:16px};h1{font-size:18px}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>3D results for angle of attack equals 5°</h1>
+    <p class="note">Click for full resolution.</p>
+
+    <figure>
+        <figcaption>The main velocity is 20 m/s. The figure shows the secondary velocity.</figcaption>
+        <a href="distribution.png" target="_blank">
+          <img src="distribution.png" alt="distribution">
+        </a>
+      </figure>
+
+    <figure>
+      <figcaption>Total velocity in the xz plane.</figcaption>
+      <a href="5deg_Plane2_vel.png" target="_blank">
+        <img src="5deg_Plane2_vel.png" alt="velocity">
+      </a>
+    </figure>
+
+    <figure>
+      <figcaption>X component of the velocity in the xz plane.</figcaption>
+      <a href="5deg_Plane2_velX.png" target="_blank">
+        <img src="5deg_Plane2_velX.png" alt="xvelocity">
+      </a>
+    </figure>
+
+    <figure>
+      <figcaption>Z component of the velocity in the xz plane.</figcaption>
+      <a href="5deg_Plane2_velZ.png" target="_blank">
+        <img src="5deg_Plane2_velZ.png" alt="zvelocity">
+      </a>
+    </figure>
+
+    <figure>
+        <figcaption>Pressure in the xz plane.</figcaption>
+        <a href="5deg_Plane2_press.png" target="_blank">
+          <img src="5deg_Plane2_press.png" alt="pressure">
+        </a>
+      </figure>
+
+      <figure>
+        <figcaption>Velocity in the xy plane.</figcaption>
+        <a href="5deg_Plane1_vel.png" target="_blank">
+          <img src="5deg_Plane1_vel.png" alt="velocity">
+        </a>
+      </figure>
+      <figure>
+        <figcaption>Pressure in the xy plane.</figcaption>
+        <a href="5deg_Plane1_press.png" target="_blank">
+          <img src="5deg_Plane1_press.png" alt="pressure">
+        </a>
+      </figure>
+      <figure>
+        <figcaption>Velocity detail.</figcaption>
+        <a href="5deg_velocity_detail.png" target="_blank">
+          <img src="5deg_velocity_detail.png" alt="pressure">
+        </a>
+      </figure>
+      <figure>
+        <figcaption>Pressure detail.</figcaption>
+        <a href="5deg_pressure_detail.png" target="_blank">
+          <img src="5deg_pressure_detail.png" alt="pressure">
+        </a>
+      </figure>
+      <figure>
+        <figcaption>Pressure along the blade.</figcaption>
+        <a href="5deg_pressure_profile.png" target="_blank">
+          <img src="5deg_pressure_profile.png" alt="pressure">
+        </a>
+      </figure>
+  </div>
+</body>
+</html>

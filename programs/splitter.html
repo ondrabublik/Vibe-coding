@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Splitter podle řádků</title>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    textarea { width: 100%; height: 150px; margin-top: 10px; }
+    .part { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+
+  <h2>Rozdělovač souboru podle řádků</h2>
+
+  <label>Vyber soubor:</label>
+  <input type="file" id="fileInput"><br><br>
+
+  <label>Počet částí:</label>
+  <input type="number" id="partCount" min="1" value="2">
+  <button onclick="splitFile()">Split</button>
+
+  <div id="output"></div>
+
+  <script>
+    function splitFile() {
+      const fileInput = document.getElementById("fileInput");
+      const partCount = parseInt(document.getElementById("partCount").value);
+      const outputDiv = document.getElementById("output");
+      outputDiv.innerHTML = "";
+
+      if (!fileInput.files.length) {
+        alert("Nejprve vyber soubor.");
+        return;
+      }
+
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+
+      reader.onload = function(e) {
+        const content = e.target.result;
+        const lines = content.split(/\r?\n/);  // rozdělení podle řádků
+        const totalLines = lines.length;
+        const linesPerPart = Math.floor(totalLines / partCount);
+        let remainder = totalLines % partCount;
+
+        let currentIndex = 0;
+
+        for (let i = 0; i < partCount; i++) {
+          let currentPartSize = linesPerPart + (remainder > 0 ? 1 : 0);
+          if (remainder > 0) remainder--;
+
+          const partLines = lines.slice(currentIndex, currentIndex + currentPartSize);
+          currentIndex += currentPartSize;
+
+          const textarea = document.createElement("textarea");
+          textarea.value = partLines.join('\n');
+          textarea.classList.add("part");
+
+          outputDiv.appendChild(textarea);
+        }
+      };
+
+      reader.readAsText(file);
+    }
+  </script>
+
+</body>
+</html>
