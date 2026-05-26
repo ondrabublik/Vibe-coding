@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sachy</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <h1>Webove sachy</h1>
+    <section class="panel">
+      <p id="status">Na tahu: Bily</p>
+      <p id="result" class="result"></p>
+      <label for="ai-mode"><strong>AI protivnik:</strong></label>
+      <select id="ai-mode">
+        <option value="easy">AI 1 (braní figur)</option>
+        <option value="minmax">AI 2 (MinMax 2 tahy AI, 1 tah hrace)</option>
+        <option value="alphabeta">AI 3 (MinMax + Alfa-beta, hloubka 5)</option>
+      </select>
+      <label for="game-variant"><strong>Varianta hry:</strong></label>
+      <select id="game-variant">
+        <option value="classic">Klasicke rozestaveni</option>
+        <option value="chess960">Fischer Random (nahodny zadni rad)</option>
+        <option value="horde_wb">Horda za bile (bez bileho krale)</option>
+        <option value="horde_bw">Horda protivnika (bez cerneho krale)</option>
+      </select>
+      <div class="captured">
+        <div>
+          <strong>Vyhozene bile:</strong>
+          <span id="captured-white">-</span>
+        </div>
+        <div>
+          <strong>Vyhozene cerne:</strong>
+          <span id="captured-black">-</span>
+        </div>
+      </div>
+      <button id="reset">Nova hra</button>
+    </section>
+    <section class="board-wrap">
+      <div id="board" class="board" aria-label="Sachovnice"></div>
+    </section>
+  </main>
+  <script src="ai.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
