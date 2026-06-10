@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Three.js 3D Hra</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="overlay">
+      <h1>3D Strilecka</h1>
+      <p>Klikni do okna pro zamereni mysi.</p>
+      <p>Pohyb: W/S/A/D, skok: Space</p>
+      <p>Strelba: leve tlacitko mysi, zbrane: 1/2/3</p>
+      <p>Cil: eliminuj nepratele a prezij.</p>
+      <button id="startButton">Start hry</button>
+    </div>
+
+    <div id="hud">
+      <span>Skore: </span><span id="score">0</span>
+      <span>HP: </span><span id="hp">100</span>
+      <span>Zbran: </span><span id="weapon">PISTOL</span>
+      <span>Munice: </span><span id="ammo">12</span>
+      <span id="message"></span>
+    </div>
+    <div id="crosshair">+</div>
+    <div id="sniperCrosshair" class="hidden">
+      <div class="scope-circle"></div>
+      <div class="scope-v"></div>
+      <div class="scope-h"></div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.146.0/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module" src="./game.js"></script>
+  </body>
+</html>
