@@ -26,6 +26,21 @@ const ammoElement = document.getElementById("ammo");
 const messageElement = document.getElementById("message");
 const crosshairElement = document.getElementById("crosshair");
 const sniperCrosshairElement = document.getElementById("sniperCrosshair");
+const mobileControls = document.getElementById("mobileControls");
+const joystickZone = document.getElementById("joystickZone");
+const joystickKnob = document.getElementById("joystickKnob");
+const lookZone = document.getElementById("lookZone");
+const btnJump = document.getElementById("btnJump");
+const btnShoot = document.getElementById("btnShoot");
+const btnWeapon = document.getElementById("btnWeapon");
+const btnAim = document.getElementById("btnAim");
+const portraitPrompt = document.getElementById("portraitPrompt");
+const isMobile =
+  /Android|iPhone|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 1 && window.matchMedia("(max-width: 900px)").matches);
+let mobileGameActive = false;
+const lookPitchLimit = Math.PI / 2 - 0.02;
+const lookSensitivity = 0.004;
 const defaultFov = 75;
 const sniperAimFov = 35;
 let isSniperAiming = false;
@@ -117,9 +132,60 @@ function playDamageSfx() {
   playTone({ frequency: 130, type: "sawtooth", duration: 0.09, volume: 0.07, slideTo: 90 });
 }
 
+const _lookEuler = new THREE.Euler(0, 0, 0, "YXZ");
+
+function addMobileLookDelta(deltaX, deltaY) {
+  _lookEuler.setFromQuaternion(camera.quaternion, "YXZ");
+  _lookEuler.y -= deltaX * lookSensitivity;
+  _lookEuler.x -= deltaY * lookSensitivity;
+  _lookEuler.x = THREE.MathUtils.clamp(_lookEuler.x, -lookPitchLimit, lookPitchLimit);
+  _lookEuler.z = 0;
+  camera.quaternion.setFromEuler(_lookEuler);
+}
+
+function resetMobileLook() {
+  camera.quaternion.set(0, 0, 0, 1);
+}
+
+function isGameActive() {
+  return isMobile ? mobileGameActive : controls.isLocked;
+}
+
+function isPortrait() {
+  return window.matchMedia("(orientation: portrait)").matches;
+}
+
+function updateOrientationPrompt() {
+  if (!isMobile) return;
+  portraitPrompt.classList.toggle("hidden", !isPortrait() || !mobileGameActive);
+  document.body.classList.toggle("game-running", mobileGameActive);
+}
+
+function tryLockLandscape() {
+  if (!isMobile || !screen.orientation?.lock) return;
+  screen.orientation.lock("landscape").catch(() => {});
+}
+
+function tryEnterFullscreen() {
+  if (document.fullscreenElement || document.webkitFullscreenElement) return;
+  const el = document.documentElement;
+  const request = el.requestFullscreen?.() ?? el.webkitRequestFullscreen?.();
+  if (request) Promise.resolve(request).catch(() => {});
+}
+
+function updateRendererSize() {
+  const width = window.visualViewport?.width ?? window.innerWidth;
+  const height = window.visualViewport?.height ?? window.innerHeight;
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+  updateOrientationPrompt();
+}
+
 function requestPointerLock() {
   messageElement.textContent = "";
   ensureAudioContext();
+  tryEnterFullscreen();
   renderer.domElement.focus();
   if (renderer.domElement.requestPointerLock) {
     renderer.domElement.requestPointerLock();
@@ -128,11 +194,54 @@ function requestPointerLock() {
   }
 }
 
+function startMobileGame() {
+  messageElement.textContent = "";
+  ensureAudioContext();
+  tryEnterFullscreen();
+  tryLockLandscape();
+  overlay.classList.add("hidden");
+  mobileGameActive = true;
+  mobileControls.classList.remove("hidden");
+  updateOrientationPrompt();
+  updateRendererSize();
+}
+
+function stopMobileGame() {
+  mobileGameActive = false;
+  resetJoystick();
+  isPrimaryFireHeld = false;
+  setSniperAim(false);
+  btnAim?.classList.remove("active");
+  mobileControls.classList.add("hidden");
+  document.body.classList.remove("game-running");
+  overlay.classList.remove("hidden");
+  updateOrientationPrompt();
+}
+
+if (isMobile) {
+  document.body.classList.add("mobile");
+  ["overlayHintDesktop", "overlayHintDesktop2", "overlayHintDesktop3"].forEach((id) => {
+    document.getElementById(id)?.classList.add("hidden");
+  });
+  ["overlayHintMobile", "overlayHintMobile2", "overlayHintMobile3"].forEach((id) => {
+    document.getElementById(id)?.classList.remove("hidden");
+  });
+}
+
 startButton.addEventListener("click", () => {
   resetGame();
+  if (isMobile) {
+    if (isPortrait()) {
+      messageElement.textContent = "Pro hru otoč telefon na šířku.";
+      return;
+    }
+    startMobileGame();
+    return;
+  }
   requestPointerLock();
 });
 renderer.domElement.addEventListener("click", () => {
+  if (isMobile) return;
   if (!controls.isLocked) requestPointerLock();
 });
 
@@ -547,6 +656,211 @@ let weaponKick = 0;
 let karambitSwing = 0;
 
 const move = { forward: false, backward: false, left: false, right: false };
+const joystick = { active: false, x: 0, y: 0, touchId: null };
+const JOYSTICK_MAX_RADIUS = 48;
+const JOYSTICK_DEADZONE = 0.12;
+
+function resetJoystick() {
+  joystick.active = false;
+  joystick.x = 0;
+  joystick.y = 0;
+  joystick.touchId = null;
+  joystickZone?.classList.remove("active");
+  if (joystickKnob) joystickKnob.style.transform = "translate(0px, 0px)";
+  move.forward = false;
+  move.backward = false;
+  move.left = false;
+  move.right = false;
+}
+
+function setJoystickFromTouch(clientX, clientY) {
+  const rect = joystickZone.getBoundingClientRect();
+  const centerX = rect.left + rect.width / 2;
+  const centerY = rect.top + rect.height / 2;
+  let dx = clientX - centerX;
+  let dy = clientY - centerY;
+  const dist = Math.hypot(dx, dy);
+  if (dist > JOYSTICK_MAX_RADIUS) {
+    dx = (dx / dist) * JOYSTICK_MAX_RADIUS;
+    dy = (dy / dist) * JOYSTICK_MAX_RADIUS;
+  }
+  joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  joystick.x = dx / JOYSTICK_MAX_RADIUS;
+  joystick.y = dy / JOYSTICK_MAX_RADIUS;
+}
+
+function updateMoveFromJoystick() {
+  if (!isMobile || !mobileGameActive) return;
+  move.forward = joystick.y < -JOYSTICK_DEADZONE;
+  move.backward = joystick.y > JOYSTICK_DEADZONE;
+  move.left = joystick.x < -JOYSTICK_DEADZONE;
+  move.right = joystick.x > JOYSTICK_DEADZONE;
+}
+
+function setupMobileControls() {
+  joystickZone.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!mobileGameActive) return;
+      event.preventDefault();
+      const touch = event.changedTouches[0];
+      joystick.active = true;
+      joystick.touchId = touch.identifier;
+      joystickZone.classList.add("active");
+      setJoystickFromTouch(touch.clientX, touch.clientY);
+      updateMoveFromJoystick();
+    },
+    { passive: false }
+  );
+
+  joystickZone.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!joystick.active) return;
+      event.preventDefault();
+      const touch = [...event.touches].find((item) => item.identifier === joystick.touchId);
+      if (!touch) return;
+      setJoystickFromTouch(touch.clientX, touch.clientY);
+      updateMoveFromJoystick();
+    },
+    { passive: false }
+  );
+
+  const endJoystick = (event) => {
+    for (const touch of event.changedTouches) {
+      if (touch.identifier === joystick.touchId) resetJoystick();
+    }
+  };
+  joystickZone.addEventListener("touchend", endJoystick);
+  joystickZone.addEventListener("touchcancel", endJoystick);
+
+  let lookTouchId = null;
+  let lastLookX = 0;
+  let lastLookY = 0;
+  let lookTouchStartX = 0;
+  let lookTouchStartY = 0;
+  let lookTouchMoved = false;
+
+  lookZone.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!mobileGameActive || lookTouchId !== null) return;
+      event.preventDefault();
+      const touch = event.changedTouches[0];
+      lookTouchId = touch.identifier;
+      lastLookX = touch.clientX;
+      lastLookY = touch.clientY;
+      lookTouchStartX = touch.clientX;
+      lookTouchStartY = touch.clientY;
+      lookTouchMoved = false;
+    },
+    { passive: false }
+  );
+
+  lookZone.addEventListener(
+    "touchmove",
+    (event) => {
+      if (lookTouchId === null) return;
+      event.preventDefault();
+      const touch = [...event.touches].find((item) => item.identifier === lookTouchId);
+      if (!touch) return;
+      const deltaX = touch.clientX - lastLookX;
+      const deltaY = touch.clientY - lastLookY;
+      if (Math.hypot(touch.clientX - lookTouchStartX, touch.clientY - lookTouchStartY) > 8) {
+        lookTouchMoved = true;
+      }
+      addMobileLookDelta(deltaX, deltaY);
+      lastLookX = touch.clientX;
+      lastLookY = touch.clientY;
+    },
+    { passive: false }
+  );
+
+  const endLook = (event) => {
+    for (const touch of event.changedTouches) {
+      if (touch.identifier === lookTouchId) {
+        if (!lookTouchMoved && mobileGameActive) {
+          shoot(performance.now() / 1000);
+        }
+        lookTouchId = null;
+        lookTouchMoved = false;
+      }
+    }
+  };
+  lookZone.addEventListener("touchend", endLook);
+  lookZone.addEventListener("touchcancel", endLook);
+
+  btnJump.addEventListener(
+    "touchstart",
+    (event) => {
+      event.preventDefault();
+      if (!mobileGameActive || !player.grounded) return;
+      player.velocityY = 7.2;
+      player.grounded = false;
+      playJumpSfx();
+    },
+    { passive: false }
+  );
+
+  btnShoot.addEventListener(
+    "touchstart",
+    (event) => {
+      event.preventDefault();
+      if (!mobileGameActive) return;
+      isPrimaryFireHeld = true;
+      shoot(performance.now() / 1000);
+    },
+    { passive: false }
+  );
+  btnShoot.addEventListener(
+    "touchend",
+    (event) => {
+      event.preventDefault();
+      isPrimaryFireHeld = false;
+    },
+    { passive: false }
+  );
+  btnShoot.addEventListener("touchcancel", () => {
+    isPrimaryFireHeld = false;
+  });
+
+  btnWeapon.addEventListener(
+    "touchstart",
+    (event) => {
+      event.preventDefault();
+      if (!mobileGameActive) return;
+      cycleWeapon(1);
+    },
+    { passive: false }
+  );
+
+  btnAim.addEventListener(
+    "touchstart",
+    (event) => {
+      event.preventDefault();
+      if (!mobileGameActive || currentWeapon !== "sniper") return;
+      setSniperAim(true);
+      btnAim.classList.add("active");
+    },
+    { passive: false }
+  );
+  btnAim.addEventListener(
+    "touchend",
+    (event) => {
+      event.preventDefault();
+      setSniperAim(false);
+      btnAim.classList.remove("active");
+    },
+    { passive: false }
+  );
+  btnAim.addEventListener("touchcancel", () => {
+    setSniperAim(false);
+    btnAim.classList.remove("active");
+  });
+
+  window.matchMedia("(orientation: portrait)").addEventListener("change", updateOrientationPrompt);
+}
+
 const player = {
   hp: 100,
   score: 0,
@@ -743,6 +1057,10 @@ function setWeapon(next) {
   Object.entries(weaponModels).forEach(([name, model]) => {
     model.visible = name === currentWeapon;
   });
+  btnAim?.classList.toggle("hidden", currentWeapon !== "sniper");
+  if (currentWeapon !== "sniper") {
+    btnAim?.classList.remove("active");
+  }
 }
 
 const weaponOrder = ["pistol", "sniper", "karambit"];
@@ -781,6 +1099,10 @@ function resetGame() {
   player.velocityY = 0;
   player.grounded = true;
   controls.getObject().position.set(0, player.eyeHeight, 20);
+  if (isMobile) {
+    resetJoystick();
+    resetMobileLook();
+  }
 
   move.forward = false;
   move.backward = false;
@@ -851,7 +1173,7 @@ document.addEventListener("keydown", (event) => {
       move.right = true;
       break;
     case "Space":
-      if (player.grounded && controls.isLocked) {
+      if (player.grounded && isGameActive()) {
         player.velocityY = 7.2;
         player.grounded = false;
         playJumpSfx();
@@ -1007,7 +1329,7 @@ function spawnBullet(weapon, weaponName) {
 }
 
 function shoot(nowSeconds) {
-  if (!controls.isLocked || player.hp <= 0) return;
+  if (!isGameActive() || player.hp <= 0) return;
   const weapon = weaponConfigs[currentWeapon];
   if (nowSeconds - lastShotTime < weapon.cooldown) return;
   lastShotTime = nowSeconds;
@@ -1084,7 +1406,7 @@ renderer.domElement.addEventListener("contextmenu", (event) => {
 const clock = new THREE.Clock();
 
 function updateMovement(delta) {
-  if (!controls.isLocked || player.hp <= 0) return;
+  if (!isGameActive() || player.hp <= 0) return;
 
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
@@ -1159,8 +1481,11 @@ function updateEnemies(delta) {
       playDamageSfx();
       hpElement.textContent = String(player.hp);
       if (player.hp <= 0) {
-        messageElement.textContent = "Prohral jsi. Klikni na Start pro restart stranky.";
-        controls.unlock();
+        messageElement.textContent = isMobile
+          ? "Prohral jsi. Klepni na Start pro novou hru."
+          : "Prohral jsi. Klikni na Start pro restart stranky.";
+        if (isMobile) stopMobileGame();
+        else controls.unlock();
       }
     }
   }
@@ -1205,7 +1530,7 @@ function updateBullets(delta) {
 }
 
 function updateWeaponView(delta, elapsed) {
-  if (!controls.isLocked || player.hp <= 0) {
+  if (!isGameActive() || player.hp <= 0) {
     weaponViewRoot.visible = false;
     return;
   }
@@ -1239,10 +1564,12 @@ function animate() {
   renderer.render(scene, camera);
 }
 
+if (isMobile) setupMobileControls();
+
 animate();
 
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+window.addEventListener("resize", updateRendererSize);
+window.visualViewport?.addEventListener("resize", updateRendererSize);
+window.visualViewport?.addEventListener("scroll", updateRendererSize);
+document.addEventListener("fullscreenchange", updateRendererSize);
+document.addEventListener("webkitfullscreenchange", updateRendererSize);

@@ -2,16 +2,33 @@
 <html lang="cs">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#0f172a" />
     <title>Three.js 3D Hra</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
+    <div id="portraitPrompt" class="hidden">
+      <div class="portrait-prompt-box">
+        <span class="portrait-icon">↻</span>
+        <p>Otoč telefon na šířku</p>
+      </div>
+    </div>
+
     <div id="overlay">
       <h1>3D Strilecka</h1>
-      <p>Klikni do okna pro zamereni mysi.</p>
-      <p>Pohyb: W/S/A/D, skok: Space</p>
-      <p>Strelba: leve tlacitko mysi, zbrane: 1/2/3</p>
+      <p id="overlayHintDesktop">Klikni do okna pro zamereni mysi.</p>
+      <p id="overlayHintDesktop2">Pohyb: W/S/A/D, skok: Space</p>
+      <p id="overlayHintDesktop3">Strelba: leve tlacitko mysi, zbrane: 1/2/3</p>
+      <p id="overlayHintMobile" class="hidden">Otoč telefon na šířku a klepni na Start.</p>
+      <p id="overlayHintMobile2" class="hidden">Pohyb: joystick vlevo, pohled: táhni prstem vpravo</p>
+      <p id="overlayHintMobile3" class="hidden">Střelba a skok: tlačítka vpravo dole, zbraň: tlačítko ZBR</p>
       <p>Cil: eliminuj nepratele a prezij.</p>
       <button id="startButton">Start hry</button>
     </div>
@@ -28,6 +45,21 @@
       <div class="scope-circle"></div>
       <div class="scope-v"></div>
       <div class="scope-h"></div>
+    </div>
+
+    <div id="mobileControls" class="hidden">
+      <div id="lookZone" aria-hidden="true"></div>
+      <div id="joystickZone">
+        <div id="joystickBase">
+          <div id="joystickKnob"></div>
+        </div>
+      </div>
+      <div id="mobileActions">
+        <button id="btnWeapon" type="button" class="mobile-btn mobile-btn-weapon">ZBR</button>
+        <button id="btnAim" type="button" class="mobile-btn mobile-btn-aim hidden">MÍŘIT</button>
+        <button id="btnJump" type="button" class="mobile-btn mobile-btn-jump">SKOK</button>
+        <button id="btnShoot" type="button" class="mobile-btn mobile-btn-shoot">STŘELBA</button>
+      </div>
     </div>
 
     <script type="importmap">
