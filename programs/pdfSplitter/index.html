@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF Splitter</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>PDF Splitter</h1>
+      <p class="subtitle">Nahrajte PDF, zobrazte informace o souboru a rozdělte ho do více částí.</p>
+    </header>
+
+    <main>
+      <section class="card upload-section">
+        <label class="dropzone" id="dropzone" for="file-input">
+          <input type="file" id="file-input" accept="application/pdf,.pdf" hidden>
+          <div class="dropzone-content">
+            <span class="dropzone-icon" aria-hidden="true">📄</span>
+            <p class="dropzone-title">Přetáhněte PDF sem nebo klikněte pro výběr</p>
+            <p class="dropzone-hint">Podporován je formát PDF</p>
+          </div>
+        </label>
+      </section>
+
+      <section class="card info-section hidden" id="info-section">
+        <h2>Informace o souboru</h2>
+        <dl class="info-grid" id="info-grid"></dl>
+      </section>
+
+      <section class="card split-section hidden" id="split-section">
+        <div class="section-header">
+          <h2>Rozdělení PDF</h2>
+          <button type="button" class="btn btn-secondary" id="add-range-btn">+ Přidat rozsah</button>
+        </div>
+        <p class="hint">Zadejte rozsahy stran (1 = první stránka). Každý rozsah se uloží jako samostatný PDF soubor.</p>
+
+        <div class="ranges" id="ranges"></div>
+
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="split-btn">Rozdělit a stáhnout</button>
+          <span class="status" id="status" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <template id="range-template">
+    <div class="range-row">
+      <label>
+        <span>Od stránky</span>
+        <input type="number" class="range-from" min="1" value="1">
+      </label>
+      <label>
+        <span>Do stránky</span>
+        <input type="number" class="range-to" min="1" value="1">
+      </label>
+      <label class="range-name-label">
+        <span>Název souboru</span>
+        <input type="text" class="range-name" placeholder="volitelné">
+      </label>
+      <button type="button" class="btn btn-icon btn-remove" title="Odebrat rozsah" aria-label="Odebrat rozsah">×</button>
+    </div>
+  </template>
+
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
