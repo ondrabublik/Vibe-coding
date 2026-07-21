@@ -20,9 +20,7 @@
     return a >= eps ? a : 0.5 * (lam * lam / eps + eps);
   }
 
-  function roe(ext, idxL, idxR, nx, ny, gamma, fOut) {
-    const L = Flux.prims(ext, idxL, gamma);
-    const R = Flux.prims(ext, idxR, gamma);
+  function roe(L, R, nx, ny, gamma, fOut) {
 
     // Physical fluxes
     const fL = [0, 0, 0, 0], fR = [0, 0, 0, 0];

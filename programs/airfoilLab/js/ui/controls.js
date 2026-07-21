@@ -119,6 +119,15 @@
 
     // ── Solver section ─────────────────────────────────────────────────────────
     bindSelect('fluxSelect', 'fluxScheme');
+
+    function updateLimiterRowVisibility() {
+      const row = el('limiterRow');
+      if (row) row.style.display = app.params.reconstruction === 'linear' ? '' : 'none';
+    }
+    bindSelect('reconSelect', 'reconstruction', updateLimiterRowVisibility);
+    bindSelect('limiterSelect', 'limiter');
+    updateLimiterRowVisibility();
+
     bindSlider('cflRange', 'cflVal', 'cfl', 2);
     bindSlider('substepsRange', 'substepsVal', 'substeps', 0);
 

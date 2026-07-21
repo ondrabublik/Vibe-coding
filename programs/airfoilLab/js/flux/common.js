@@ -5,7 +5,7 @@
 
   const EPS = 1e-12;
 
-  // Extract primitive variables from extended-state array at given index
+  // Extract primitive variables from extended-state array at given index.
   NS.Flux.prims = function (ext, idx, gamma) {
     const rho  = Math.max(ext.rho[idx], EPS);
     const irho = 1.0 / rho;
@@ -17,6 +17,8 @@
     return { rho, u, v, E, p, c, H: (E + p) * irho };
   };
 
-  // Flux function registry — populated by individual flux scheme files
+  // Flux function registry — populated by individual flux scheme files.
+  // Registered functions have signature: (L, R, nx, ny, gamma, fOut)
+  // where L and R are prim objects {rho, u, v, p, E, c, H}.
   NS.Flux.registry = {};
 })(window.AFL);

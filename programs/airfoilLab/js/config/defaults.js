@@ -33,7 +33,9 @@
     cfl:      0.5,
     substeps: 3,
     paused:   false,
-    fluxScheme: 'ausm',  // 'ausm' | 'roe'
+    fluxScheme:     'ausm',     // 'ausm' | 'roe'
+    reconstruction: 'constant', // 'constant' | 'linear'
+    limiter:        'minmod',   // 'minmod' | 'vanleer' | 'superbee'
 
     // Visualization
     vizField:    'mach',     // 'mach'|'pressure'|'density'|'velocity'|'u'|'v'

@@ -126,6 +126,21 @@
             <option value="roe">Roe</option>
           </select>
         </div>
+        <div class="row">
+          <label>Rekonstrukce</label>
+          <select id="reconSelect">
+            <option value="constant" selected>1. řád (konstantní)</option>
+            <option value="linear">2. řád (MUSCL)</option>
+          </select>
+        </div>
+        <div class="row" id="limiterRow">
+          <label>Limiter</label>
+          <select id="limiterSelect">
+            <option value="minmod" selected>Minmod</option>
+            <option value="vanleer">van Leer</option>
+            <option value="superbee">Superbee</option>
+          </select>
+        </div>
         <div class="slider-row">
           <div class="slider-label">
             <span>CFL</span>
@@ -247,6 +262,8 @@
 <script src="js/flux/common.js"></script>
 <script src="js/flux/ausm.js"></script>
 <script src="js/flux/roe.js"></script>
+
+<script src="js/recon/muscl.js"></script>
 
 <script src="js/time/rk.js"></script>
 

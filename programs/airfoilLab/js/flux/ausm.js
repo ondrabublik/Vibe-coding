@@ -11,9 +11,7 @@
   function pPlus(M)  { return Math.abs(M) >= 1 ? (M > 0 ? 1.0 : 0.0) : 0.25 * (M + 1.0) * (M + 1.0) * (2.0 - M); }
   function pMinus(M) { return Math.abs(M) >= 1 ? (M < 0 ? 1.0 : 0.0) : 0.25 * (M - 1.0) * (M - 1.0) * (2.0 + M); }
 
-  function ausm(ext, idxL, idxR, nx, ny, gamma, fOut) {
-    const L = Flux.prims(ext, idxL, gamma);
-    const R = Flux.prims(ext, idxR, gamma);
+  function ausm(L, R, nx, ny, gamma, fOut) {
 
     const unL = L.u * nx + L.v * ny;
     const unR = R.u * nx + R.v * ny;

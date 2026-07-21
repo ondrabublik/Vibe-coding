@@ -6,6 +6,7 @@
 
   const Math_  = NS.Math_;
   const Flux   = NS.Flux;
+  const Recon  = NS.Recon;
   const BC     = NS.BC;
   const RK     = NS.RK;
 
@@ -63,15 +64,29 @@
       BC.applyFarfield(ext, grid, freeStream);
 
       const tmpF = [0, 0, 0, 0];
-      const fluxFn = Flux.registry[params.fluxScheme] || Flux.registry.ausm;
+      const fluxFn   = Flux.registry[params.fluxScheme] || Flux.registry.ausm;
+      const linear   = params.reconstruction === 'linear';
+      const limiterFn = linear
+        ? (Recon.limiters[params.limiter] || Recon.limiters.minmod)
+        : null;
 
       // I-face fluxes (streamwise, around the airfoil)
       for (let j = 0; j < nj; j++) {
         for (let I = 0; I <= ni; I++) {
-          const idxL = extIdx(I,     j + 1);
-          const idxR = extIdx(I + 1, j + 1);
-          const fi   = ifaceIdx(I, j);
-          fluxFn(ext, idxL, idxR, iFaceNx[fi], iFaceNy[fi], gamma, tmpF);
+          const idxL  = extIdx(I,     j + 1);
+          const idxR  = extIdx(I + 1, j + 1);
+          const fi    = ifaceIdx(I, j);
+          let L, R;
+          if (linear) {
+            // 4-point stencil; -1 signals out-of-bounds (slope clamped to 0)
+            const idxLL = I >= 1      ? extIdx(I - 1, j + 1) : -1;
+            const idxRR = I <= ni - 1 ? extIdx(I + 2, j + 1) : -1;
+            [L, R] = Recon.reconstructFace(ext, idxLL, idxL, idxR, idxRR, gamma, limiterFn);
+          } else {
+            L = Flux.prims(ext, idxL, gamma);
+            R = Flux.prims(ext, idxR, gamma);
+          }
+          fluxFn(L, R, iFaceNx[fi], iFaceNy[fi], gamma, tmpF);
           const a = iFaceArea[fi];
           fI.rho[fi]  = tmpF[0] * a;
           fI.rhou[fi] = tmpF[1] * a;
@@ -83,10 +98,19 @@
       // J-face fluxes (wall-normal direction)
       for (let J = 0; J <= nj; J++) {
         for (let i = 0; i < ni; i++) {
-          const idxB = extIdx(i + 1, J);
-          const idxT = extIdx(i + 1, J + 1);
-          const fj   = jfaceIdx(i, J);
-          fluxFn(ext, idxB, idxT, jFaceNx[fj], jFaceNy[fj], gamma, tmpF);
+          const idxB  = extIdx(i + 1, J);
+          const idxT  = extIdx(i + 1, J + 1);
+          const fj    = jfaceIdx(i, J);
+          let L, R;
+          if (linear) {
+            const idxBB = J >= 1      ? extIdx(i + 1, J - 1) : -1;
+            const idxTT = J <= nj - 1 ? extIdx(i + 1, J + 2) : -1;
+            [L, R] = Recon.reconstructFace(ext, idxBB, idxB, idxT, idxTT, gamma, limiterFn);
+          } else {
+            L = Flux.prims(ext, idxB, gamma);
+            R = Flux.prims(ext, idxT, gamma);
+          }
+          fluxFn(L, R, jFaceNx[fj], jFaceNy[fj], gamma, tmpF);
           const a = jFaceArea[fj];
           fJ.rho[fj]  = tmpF[0] * a;
           fJ.rhou[fj] = tmpF[1] * a;
