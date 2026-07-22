@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LBM · Volná hladina (Thürey)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <main class="viewport">
+      <header class="viewport-header">
+        <h1>LBM simulace · volná hladina</h1>
+        <p class="subtitle">2D vazké proudění · D2Q9 · Thürey model (Filled / Partial / Empty cells)</p>
+      </header>
+
+      <div class="canvas-wrap">
+        <canvas id="simCanvas" aria-label="Simulační plátno"></canvas>
+      </div>
+
+      <div class="canvas-legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#3a4860"></span> Pevná stěna</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#060c16"></span> Plyn</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#0891b2"></span> Tekutina (ε, vyhlazená)</span>
+        <span class="legend-item"><span class="legend-swatch" style="border-color:#bae6fd;background:transparent"></span> Volná hladina ε=0,5</span>
+      </div>
+    </main>
+
+    <aside class="panel">
+      <section class="section">
+        <h2>Úloha</h2>
+        <select id="caseSelect" aria-label="Výběr benchmarku">
+          <option value="damBreak" selected>Dam break</option>
+          <option value="droplet">Padající kapka</option>
+          <option value="columnCollapse">Kolaps sloupce</option>
+          <option value="user">Vlastní úloha</option>
+        </select>
+        <p class="hint" id="caseHint"></p>
+      </section>
+
+      <section class="section">
+        <h2>Ovládání</h2>
+        <div class="btn-row">
+          <button type="button" id="btnPlay" class="btn primary">Pauza</button>
+          <button type="button" id="btnStep" class="btn">Krok</button>
+          <button type="button" id="btnReset" class="btn">Reset</button>
+        </div>
+        <div class="slider-row" style="margin-top:10px">
+          <div class="slider-label"><span>Kroky / snímek</span><em id="stepsVal">4</em></div>
+          <input type="range" id="stepsRange" min="1" max="20" step="1" value="4" />
+        </div>
+        <label class="slider-row" style="margin-top:10px">
+          <div class="slider-label"><span>Rozlišení mřížky</span><em id="gridVal">160 × 90</em></div>
+          <select id="gridSelect" aria-label="Rozlišení výpočetní mřížky"></select>
+        </label>
+        <p class="hint">Změna rozlišení resetuje úlohu. Vyšší mřížka = ostřejší hladina, pomalejší výpočet.</p>
+      </section>
+
+      <section class="section">
+        <h2>Fyzika</h2>
+        <div class="slider-row">
+          <div class="slider-label"><span>Kinematická viskozita ν</span><em id="nuVal">0.020</em></div>
+          <input type="range" id="nuRange" min="0.005" max="0.08" step="0.001" value="0.02" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><span>Gravitace (lattice)</span><em id="gravityVal">4.00e-5</em></div>
+          <input type="range" id="gravityRange" min="0.00001" max="0.0001" step="0.000005" value="0.00004" />
+        </div>
+        <p class="hint">Relaxační čas τ = 3ν + 0,5. Nízká viskozita → ostřejší vlny, vyšší nároky na stabilitu.</p>
+      </section>
+
+      <section class="section">
+        <h2>Vizualizace</h2>
+        <label class="checkbox-row">
+          <input type="checkbox" id="showVelocity" checked /> Zobrazit rychlostní pole (HSV)
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="showSurface" checked /> Vyhlazená volná hladina (ε = 0,5)
+        </label>
+        <label class="checkbox-row">
+          <input type="checkbox" id="showContours" checked /> Izočáry rychlostního pole
+        </label>
+        <div class="slider-row">
+          <div class="slider-label"><span>Počet isoúrovní</span><em id="contourVal">8</em></div>
+          <input type="range" id="contourRange" min="3" max="16" step="1" value="8" />
+        </div>
+        <p class="hint">Hladina se kreslí bilineární interpolací podílu naplnění ε (ne po buňkách).</p>
+      </section>
+
+      <section class="section" id="editorSection" style="display:none">
+        <h2>Editor · vlastní úloha</h2>
+        <div class="tool-grid">
+          <button type="button" id="toolFluid" class="btn active">Tekutina</button>
+          <button type="button" id="toolSolid" class="btn">Překážka</button>
+          <button type="button" id="toolErase" class="btn">Gumka</button>
+        </div>
+        <div class="slider-row" style="margin-top:10px">
+          <div class="slider-label"><span>Velikost štětce</span><em id="brushVal">2</em></div>
+          <input type="range" id="brushRange" min="1" max="6" step="1" value="2" />
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <button type="button" id="btnClearDraw" class="btn danger">Vymazat kresbu</button>
+        </div>
+        <p class="hint">Simulace je pozastavena. Nakreslete počáteční stav a stiskněte Spustit.</p>
+      </section>
+
+      <section class="section">
+        <h2>Stav</h2>
+        <div class="stats">
+          <div class="stat">Krok<strong id="statStep">0</strong></div>
+          <div class="stat">Objem tekutiny<strong id="statMass">0</strong></div>
+          <div class="stat">Max |u|<strong id="statSpeed">0</strong></div>
+          <div class="stat">FPS<strong id="statFps">0</strong></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/lbm.js"></script>
+  <script src="js/cases.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
