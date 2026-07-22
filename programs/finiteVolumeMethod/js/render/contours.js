@@ -11,7 +11,7 @@
     return [xa + t * (xb - xa), ya + t * (yb - ya)];
   }
 
-  // Resolve ambiguous saddle cases (5, 10) using the cell-center average.
+  // Resolve ambiguous saddle cases (6, 9) using the cell-center average.
   function addSegments(code, lv, v00, v10, v01, v11, eB, eR, eT, eL, seg) {
     const center = (v00 + v10 + v01 + v11) * 0.25;
 
@@ -20,9 +20,9 @@
       case 2: case 13: if (eB && eR) seg.push([eB[0], eB[1], eR[0], eR[1]]); break;
       case 3: case 12: if (eL && eR) seg.push([eL[0], eL[1], eR[0], eR[1]]); break;
       case 4: case 11: if (eT && eL) seg.push([eT[0], eT[1], eL[0], eL[1]]); break;
-      case 6: case 9:  if (eB && eT) seg.push([eB[0], eB[1], eT[0], eT[1]]); break;
+      case 5: case 10: if (eB && eT) seg.push([eB[0], eB[1], eT[0], eT[1]]); break;
       case 7: case 8:  if (eT && eR) seg.push([eT[0], eT[1], eR[0], eR[1]]); break;
-      case 5:
+      case 6:
         if (center >= lv) {
           if (eB && eR) seg.push([eB[0], eB[1], eR[0], eR[1]]);
           if (eT && eL) seg.push([eT[0], eT[1], eL[0], eL[1]]);
@@ -31,7 +31,7 @@
           if (eT && eR) seg.push([eT[0], eT[1], eR[0], eR[1]]);
         }
         break;
-      case 10:
+      case 9:
         if (center >= lv) {
           if (eB && eL) seg.push([eB[0], eB[1], eL[0], eL[1]]);
           if (eT && eR) seg.push([eT[0], eT[1], eR[0], eR[1]]);
