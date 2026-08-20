@@ -2,7 +2,7 @@
  * editor.js - interaktivní modelování v canvasu.
  *
  * app (rozhraní očekávané editorem):
- *   app.model, app.vp, app.options, app.tool, app.selection
+ *   app.model, app.vp, app.options, app.tool, app.selection, app.mode
  *   app.setSelection(ids), app.render(), app.modelChanged(), app.setHint(text)
  */
 (function (root) {
@@ -18,6 +18,8 @@
   E.HINTS = {
     select: 'Vybrat: klikněte na těleso/vazbu, tažením přesunete. Ctrl+klik = více prvků, ' +
       'koncové body vybrané tyče lze táhnout. Delete maže.',
+    kinematics: 'Kinematika: tažením za těleso (nebo čep) pohybujete celým mechanismem. ' +
+      'Vazby zůstanou splněny, pohony se ignorují. Klávesa K režim vypne.',
     rod: 'Tyč: stiskněte a tažením určete délku a směr.',
     slider: 'Objímka: klikněte do místa vložení (na tyči se srovná s jejím směrem).',
     revolute: 'Rotační vazba: klikněte do místa čepu. Spojí dvě tělesa pod kurzorem, ' +
@@ -225,6 +227,7 @@
       canvas.setPointerCapture(ev.pointerId);
 
       var tool = app.tool;
+      if (app.mode === 'kinematics') return startKinematic(ev, p);
       if (tool === 'select') return startSelect(ev, p);
       if (tool === 'rod') {
         var s = snap(p);
@@ -303,6 +306,62 @@
       app.render();
     }
 
+    function startKinematic(ev, p) {
+      var hit = pick(p);
+      var bodyId = null, sLocal = null;
+
+      if (hit && hit.kind === 'body') {
+        bodyId = hit.id;
+        sLocal = Model.toLocal(Model.bodyById(app.model, bodyId), p);
+      } else if (hit && hit.kind === 'joint') {
+        var j = Model.byId(app.model, hit.id);
+        bodyId = j.bodyB !== 'ground' ? j.bodyB : j.bodyA;
+        if (bodyId === 'ground') bodyId = null;
+        else {
+          var jp = Model.jointPoint(app.model, j);
+          sLocal = Model.toLocal(Model.bodyById(app.model, bodyId), jp);
+        }
+      } else if (hit && hit.kind === 'load') {
+        var load = Model.byId(app.model, hit.id);
+        var lb = Model.bodyById(app.model, load.body);
+        if (lb && lb.type !== 'ground') {
+          bodyId = lb.id;
+          sLocal = Model.toLocal(lb, p);
+        }
+      }
+
+      if (!bodyId) {
+        if (!ev.ctrlKey && !ev.shiftKey) app.setSelection([]);
+        ed.drag = { mode: 'box', a: p };
+        app.render();
+        return;
+      }
+
+      if (app.selection.indexOf(bodyId) < 0) app.setSelection([bodyId]);
+
+      var sys, q, bodyIndex;
+      try {
+        sys = MBD.System.build(app.model, { skipDrivers: true });
+        bodyIndex = sys.index[bodyId];
+        if (sys.dofIndex[bodyIndex] < 0) return;
+        var st = MBD.System.stateFromModel(sys);
+        MBD.Analysis.assemble(sys, st.q, 0);
+        q = st.q;
+      } catch (e) {
+        app.setHint('Kinematiku nelze spustit: ' + e.message, true);
+        return;
+      }
+      ed.drag = {
+        mode: 'kinematic',
+        sys: sys,
+        q: q,
+        bodyIndex: bodyIndex,
+        sLocal: sLocal
+      };
+      canvas.style.cursor = 'grabbing';
+      app.render();
+    }
+
     function isMovableBody(id) {
       var b = Model.bodyById(app.model, id);
       return !!b && b.type !== 'ground';
@@ -358,6 +417,10 @@
       } else if (d.mode === 'force') {
         ed.preview = { type: 'vector', a: d.a, b: p, text: forceLabel(d.a, p) };
         d.b = p;
+      } else if (d.mode === 'kinematic') {
+        MBD.Analysis.followPoint(d.sys, d.q, d.bodyIndex, d.sLocal, p);
+        MBD.System.stateToModel(d.sys, d.q, null);
+        app.modelMoved();
       } else if (d.mode === 'move') {
         var target = snap(p, d.ids[0]).p;
         var dx = target[0] - d.start[0], dy = target[1] - d.start[1];
@@ -447,6 +510,13 @@
         finishForce(d);
       } else if (d.mode === 'box' && d.b) {
         boxSelect(d.a, d.b, ev.ctrlKey || ev.shiftKey);
+      } else if (d.mode === 'kinematic') {
+        app.model.bodies.forEach(function (b) {
+          if (b.type === 'ground') return;
+          b.vx = 0; b.vy = 0; b.omega = 0;
+        });
+        canvas.style.cursor = app.mode === 'kinematics' ? 'grab' : (app.tool === 'select' ? 'default' : 'crosshair');
+        app.modelChanged();
       } else if (d.mode === 'move' || d.mode === 'endpoint' || d.mode === 'rotate' ||
         d.mode === 'joint' || d.mode === 'loadpoint') {
         app.modelChanged();
@@ -510,7 +580,11 @@
     canvas.addEventListener('pointerdown', onDown);
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerup', onUp);
-    canvas.addEventListener('pointercancel', function () { ed.drag = null; ed.preview = null; app.render(); });
+    canvas.addEventListener('pointercancel', function () {
+      ed.drag = null; ed.preview = null;
+      canvas.style.cursor = app.mode === 'kinematics' ? 'grab' : (app.tool === 'select' ? 'default' : 'crosshair');
+      app.render();
+    });
     canvas.addEventListener('wheel', onWheel, { passive: false });
     canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     canvas.addEventListener('pointerleave', function () {

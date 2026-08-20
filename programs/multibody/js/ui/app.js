@@ -15,6 +15,7 @@
     editor: null,
     selection: [],
     tool: 'select',
+    mode: 'edit',
     options: { grid: true, snap: true, vel: true, acc: false, reac: true, trace: true },
     result: null,
     resultStale: false,
@@ -103,6 +104,9 @@
     document.addEventListener('click', function () { ui['examples-menu'].classList.remove('open'); });
 
     document.getElementById('btn-assemble').addEventListener('click', assemble);
+    document.getElementById('btn-kinematics').addEventListener('click', function () {
+      setMode(app.mode === 'kinematics' ? 'edit' : 'kinematics');
+    });
     document.getElementById('btn-run').addEventListener('click', runAnalysis);
     document.getElementById('btn-stop').addEventListener('click', stopAnalysis);
     document.getElementById('btn-fit').addEventListener('click', function () { fitView(); });
@@ -163,6 +167,7 @@
 
   function bindSplitter() {
     var sp = document.getElementById('splitter');
+    var appEl = document.getElementById('app');
     var dragging = false;
     sp.addEventListener('pointerdown', function (ev) {
       dragging = true;
@@ -170,11 +175,15 @@
     });
     sp.addEventListener('pointermove', function (ev) {
       if (!dragging) return;
-      var h = Math.min(window.innerHeight - 220, Math.max(0, window.innerHeight - ev.clientY - 3));
-      document.getElementById('app').style.setProperty('--results-h', h + 'px');
+      var h = Math.max(140, window.innerHeight - ev.clientY - 3);
+      appEl.style.setProperty('--results-h', h + 'px');
       app.vp.resize();
       app.render();
       MBD.Plots.redrawAll(ui.charts);
+      // Když panel grafů naroste přes výšku okna, posuneme stránku tak,
+      // aby zůstal rozdělovací pruh pod kurzorem – simulační okno sjede nahoru.
+      var dy = sp.getBoundingClientRect().top - ev.clientY;
+      if (Math.abs(dy) > 1) window.scrollBy(0, dy);
     });
     sp.addEventListener('pointerup', function () { dragging = false; });
   }
@@ -185,10 +194,17 @@
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
       var map = { v: 'select', r: 'rod', o: 'slider', '1': 'revolute', '2': 'prismatic', m: 'torque', f: 'force' };
       var k = ev.key.toLowerCase();
+      if (k === 'k') { setMode(app.mode === 'kinematics' ? 'edit' : 'kinematics'); ev.preventDefault(); return; }
       if (map[k]) { setTool(map[k]); ev.preventDefault(); return; }
-      if (ev.key === 'Escape') { setTool('select'); app.setSelection([]); return; }
+      if (ev.key === 'Escape') {
+        if (app.mode === 'kinematics') { setMode('edit'); ev.preventDefault(); return; }
+        setTool('select'); app.setSelection([]); return;
+      }
       if (ev.key === 'Delete' || ev.key === 'Backspace') { app.deleteSelection(); ev.preventDefault(); return; }
-      if (ev.key === ' ') { togglePlay(); ev.preventDefault(); return; }
+      if (ev.key === ' ') {
+        if (app.mode === 'kinematics') { ev.preventDefault(); return; }
+        togglePlay(); ev.preventDefault(); return;
+      }
       if (ev.key === 'ArrowRight' && app.result) { app.seekIndex(app.frameIndex + 1); ev.preventDefault(); }
       if (ev.key === 'ArrowLeft' && app.result) { app.seekIndex(app.frameIndex - 1); ev.preventDefault(); }
     });
@@ -198,6 +214,9 @@
 
   function loadModel(model) {
     stopAnalysis();
+    app.mode = 'edit';
+    updateModeBtn();
+    updateViewCursor();
     app.model = model;
     app.selection = [];
     app.result = null;
@@ -216,13 +235,46 @@
   }
 
   function setTool(tool) {
+    if (app.mode === 'kinematics' && tool !== 'select') setMode('edit');
     app.tool = tool;
     document.querySelectorAll('#tools .tool').forEach(function (b) {
       b.classList.toggle('active', b.dataset.tool === tool);
     });
-    setHint(MBD.Editor.HINTS[tool] || '');
-    ui.view.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+    setHint(app.mode === 'kinematics' ? MBD.Editor.HINTS.kinematics : (MBD.Editor.HINTS[tool] || ''));
+    updateViewCursor();
     app.render();
+  }
+
+  function updateViewCursor() {
+    ui.view.style.cursor = app.mode === 'kinematics' ? 'grab'
+      : (app.tool === 'select' ? 'default' : 'crosshair');
+  }
+
+  function setMode(mode) {
+    if (mode === app.mode) return;
+    app.mode = mode;
+    updateModeBtn();
+    if (mode === 'kinematics') {
+      stopAnalysis();
+      app.playing = false;
+      updatePlayBtn();
+      setTool('select');
+      tryAssemble(true);
+      setHint(MBD.Editor.HINTS.kinematics);
+      updateViewCursor();
+    } else {
+      setHint(MBD.Editor.HINTS[app.tool] || '');
+      updateViewCursor();
+    }
+    MBD.Inspector.renderStatus(ui.status, app);
+    app.render();
+  }
+
+  function updateModeBtn() {
+    var b = document.getElementById('btn-kinematics');
+    if (!b) return;
+    b.classList.toggle('kin-on', app.mode === 'kinematics');
+    b.classList.toggle('active', app.mode === 'kinematics');
   }
 
   app.setSelection = function (ids) {
@@ -324,18 +376,19 @@
   }
 
   app.render = function () {
-    var f = app.currentFrame();
+    var kin = app.mode === 'kinematics';
+    var f = kin ? null : app.currentFrame();
     MBD.Renderer.draw(app.vp, {
       model: app.model,
-      poses: animPoses(),
+      poses: kin ? null : animPoses(),
       frame: f,
-      result: (app.result && !app.resultStale) ? app.result : null,
+      result: (!kin && app.result && !app.resultStale) ? app.result : null,
       selection: app.selection,
       hover: app.editor.hoverId,
       preview: app.editor.previewScene(),
       options: app.options,
       scales: app.scales,
-      traces: app.traces,
+      traces: kin ? [] : app.traces,
       time: f ? f.t : 0
     });
   };
@@ -348,7 +401,9 @@
     ui.hint.style.color = warn ? '#f0b350' : '';
     ui.hint.style.display = text ? '' : 'none';
     if (warn) {
-      app.hintTimer = setTimeout(function () { setHint(MBD.Editor.HINTS[app.tool] || ''); }, 3500);
+      app.hintTimer = setTimeout(function () {
+        setHint(app.mode === 'kinematics' ? MBD.Editor.HINTS.kinematics : (MBD.Editor.HINTS[app.tool] || ''));
+      }, 3500);
     }
   }
 
@@ -359,6 +414,10 @@
   // -------------------------------------------------------- sestavení mechanismu
 
   function assemble() {
+    tryAssemble(false);
+  }
+
+  function tryAssemble(quiet) {
     try {
       var sys = MBD.System.build(app.model);
       var st = MBD.System.stateFromModel(sys);
@@ -366,18 +425,22 @@
       MBD.Analysis.velocity(sys, st.q, st.qd, 0);
       MBD.System.stateToModel(sys, st.q, st.qd);
       app.modelChanged();
+      if (quiet) return r;
       if (r.converged) setHint('Mechanismus sestaven (' + r.iterations + ' iterací, zbytek ' +
         r.residual.toExponential(1) + ').');
       else setHint('Sestavení nekonvergovalo (zbytek ' + r.residual.toExponential(1) +
         '). Zkontrolujte polohy vazeb.', true);
+      return r;
     } catch (e) {
       message('Sestavení selhalo: ' + e.message, 'err');
+      return null;
     }
   }
 
   // ------------------------------------------------------------------- analýza
 
   function runAnalysis() {
+    if (app.mode === 'kinematics') setMode('edit');
     stopAnalysis();
     if (app.model.bodies.length < 2) {
       setHint('Model neobsahuje žádné pohyblivé těleso.', true);

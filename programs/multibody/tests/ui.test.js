@@ -246,6 +246,46 @@ function drag(a, b, opts) {
   console.log('\n[UI 8] Bez runtime chyb');
   assert('žádná zachycená výjimka', errors.length === 0, errors.slice(0, 3).join(' | '));
 
+  console.log('\n[UI 9] Režim kinematika – tažení podle vazeb');
+  {
+    const model = MBD.Examples.build('fourbar');
+    app.model = model;
+    app.setSelection([]);
+    app.modelChanged();
+    app.options.snap = false;
+    doc.getElementById('btn-kinematics').dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    assert('režim kinematika zapnut', app.mode === 'kinematics');
+    assert('nástroj výběr', app.tool === 'select');
+
+    const crank = model.bodies.find((b) => b.name === 'Klika');
+    const coupler = model.bodies.find((b) => b.name === 'Spojovací tyč');
+    const rocker = model.bodies.find((b) => b.name === 'Vahadlo');
+    const phi0 = crank.phi;
+    const c0 = { x: coupler.x, y: coupler.y };
+    const r0 = { x: rocker.x, y: rocker.y };
+    const grab = MBD.Model.toGlobal(crank, [crank.L / 2, 0]);
+    drag(grab, [grab[0] + 0.1, grab[1] - 0.06]);
+
+    assert('klika se pootočila', Math.abs(crank.phi - phi0) > 0.08,
+      'Δφ=' + (crank.phi - phi0).toFixed(4));
+    assert('ostatní členy se pohnuly s klikou',
+      Math.hypot(coupler.x - c0.x, coupler.y - c0.y) > 0.01 &&
+      Math.hypot(rocker.x - r0.x, rocker.y - r0.y) > 0.01);
+    let maxJ = 0;
+    model.joints.forEach((j) => {
+      const A = MBD.Model.bodyById(model, j.bodyA);
+      const B = MBD.Model.bodyById(model, j.bodyB);
+      const pa = MBD.Model.toGlobal(A, j.sA);
+      const pb = MBD.Model.toGlobal(B, j.sB);
+      maxJ = Math.max(maxJ, Math.hypot(pa[0] - pb[0], pa[1] - pb[1]));
+    });
+    assert('vazby zůstaly splněné', maxJ < 1e-6, 'max ' + maxJ.toExponential(2));
+
+    doc.getElementById('btn-kinematics').dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    assert('režim kinematika vypnut', app.mode === 'edit');
+    app.options.snap = true;
+  }
+
   console.log('\n=== ' + pass + ' OK, ' + fail + ' FAIL ===');
   dom.window.close();
   process.exit(fail ? 1 : 0);

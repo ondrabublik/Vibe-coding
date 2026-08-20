@@ -18,16 +18,15 @@
 * { box-sizing: border-box; }
 
 html, body {
-  margin: 0; padding: 0; height: 100%;
+  margin: 0; padding: 0;
   background: var(--bg); color: var(--txt);
   font: 13px/1.45 var(--font);
-  overflow: hidden;
 }
 
 #app {
-  display: grid;
-  grid-template-rows: auto 1fr 6px var(--results-h, 240px);
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
 }
 
 /* ------------------------------------------------------------------ toolbar */
@@ -38,6 +37,8 @@ html, body {
   background: linear-gradient(180deg, #1e232b, #171b21);
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
+  flex: 0 0 auto;
+  position: sticky; top: 0; z-index: 40;
 }
 
 .brand {
@@ -62,7 +63,9 @@ html, body {
 .tbtn.small { padding: 3px 7px; font-size: 12px; }
 .tbtn.primary { background: #1d4b7d; border-color: #2f6ba8; }
 .tbtn.primary:hover { background: #24598f; }
-.tbtn.tool.active { background: #2c4a6b; border-color: var(--accent); color: #fff; }
+.tbtn.active, .tbtn.tool.active { background: #2c4a6b; border-color: var(--accent); color: #fff; }
+.tbtn.kin-on { background: #1e4a38; border-color: var(--accent-2); color: #fff; }
+.tbtn.kin-on:hover { background: #255a44; }
 .tbtn .ico { font-size: 14px; line-height: 1; opacity: .9; }
 
 .toggles label {
@@ -93,7 +96,9 @@ html, body {
 main {
   display: grid;
   grid-template-columns: 250px 1fr 300px;
-  min-height: 0;
+  flex: 1 0 52vh;
+  min-height: 320px;
+  min-width: 0;
 }
 
 aside {
@@ -112,9 +117,19 @@ aside {
   position: sticky; top: 0; z-index: 2;
 }
 
-#center { display: flex; flex-direction: column; min-width: 0; }
-#canvas-wrap { position: relative; flex: 1 1 auto; min-height: 0; background: #0f1216; }
-#view { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#center { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: #0f1216;
+}
+#view {
+  position: absolute; inset: 0;
+  display: block; width: 100%; height: 100%;
+  cursor: crosshair;
+}
 
 .overlay-hint, .overlay-coords {
   position: absolute; pointer-events: none;
@@ -200,12 +215,23 @@ aside {
 
 /* ------------------------------------------------------------------ results */
 
-#splitter { background: var(--line); cursor: row-resize; }
+#splitter {
+  flex: 0 0 6px;
+  background: var(--line);
+  cursor: row-resize;
+  position: relative;
+  z-index: 5;
+}
 #splitter:hover { background: var(--accent); }
 
 #results {
   display: grid; grid-template-columns: 260px 1fr;
-  min-height: 0; background: var(--bg-2); border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+  min-height: var(--results-h, 240px);
+  position: relative;
+  z-index: 4;
+  background: var(--bg-2);
+  border-top: 1px solid var(--line);
 }
 #signals { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .results-head {
@@ -223,7 +249,7 @@ aside {
 .sig-item input { accent-color: var(--accent); }
 .sig-item .unit { color: var(--txt-dim); font-size: 11px; margin-left: auto; }
 
-#charts { overflow: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
+#charts { overflow: visible; padding: 6px; display: flex; flex-direction: column; gap: 6px; }
 .chart-box { border: 1px solid var(--line); border-radius: 6px; background: #10141a; }
 .chart-box canvas { display: block; width: 100%; }
 .charts-empty { color: var(--txt-dim); padding: 16px; font-size: 12px; }

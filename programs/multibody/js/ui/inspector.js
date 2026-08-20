@@ -389,6 +389,13 @@
         text: 'Volná dynamika: ' + d.dof + ' stupňů volnosti se řeší z pohybových rovnic.'
       }));
     }
+    if (app.mode === 'kinematics') {
+      container.appendChild(D.el('div', {
+        class: 'msg ok',
+        text: 'Režim kinematika: tažením zkoušíte pohyblivost mechanismu ' +
+          '(pohony se ignorují). Pohyblivost = ' + d.mobility + '.'
+      }));
+    }
     if (d.redundant > 0) {
       container.appendChild(D.el('div', {
         class: 'msg warn',

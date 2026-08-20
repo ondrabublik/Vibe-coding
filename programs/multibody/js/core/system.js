@@ -16,8 +16,11 @@
   /**
    * Sestaví výpočetní soustavu z modelu.
    * Pohony a offsety se "zamrazí" podle aktuální polohy modelu.
+   * opts.skipDrivers – vynechá pohony (interaktivní kinematika).
    */
-  Sys.build = function (model) {
+  Sys.build = function (model, opts) {
+    opts = opts || {};
+    var skipDrivers = !!opts.skipDrivers;
     var bodies = model.bodies;
     var nb = bodies.length;
     var index = {};
@@ -101,7 +104,7 @@
 
       if (joint.type === 'revolute') {
         addGroup('joint', joint, ia, ib, [C.coincident(ia, joint.sA, ib, joint.sB)]);
-        if (joint.driver && joint.driver.enabled) {
+        if (!skipDrivers && joint.driver && joint.driver.enabled) {
           // Phi = phi_A - phi_B - f(t); záporné znaménko rychlosti zajistí, že
           // kladná hodnota pohonu = otáčení tělesa B proti směru hod. ručiček.
           addGroup('driver', joint, ia, ib, [
@@ -115,7 +118,7 @@
           C.relAngle(ia, ib, C.constFunc(joint.angleOffset)),
           C.projection(ia, nrm, joint.sA, ib, joint.sB, C.constFunc(0))
         ]);
-        if (joint.driver && joint.driver.enabled) {
+        if (!skipDrivers && joint.driver && joint.driver.enabled) {
           // kladná hodnota pohonu = posuv tělesa B ve směru osy
           addGroup('driver', joint, ia, ib, [
             C.projection(ia, ax, joint.sA, ib, joint.sB,

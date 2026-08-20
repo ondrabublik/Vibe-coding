@@ -193,5 +193,54 @@ console.log('\n[6] Kulisový mechanismus – posuvná vazba mezi dvěma tělesy'
   assert('úhel kulisy = analytické řešení', worst6 < 1e-6, '(max odchylka ' + worst6.toExponential(2) + ' °)');
 }
 
+// --------------------------------------- 7. interaktivní kinematika (tažení)
+console.log('\n[7] Kinematika – tažení bodu při zachování vazeb');
+{
+  var L7 = 0.6;
+  var m7 = M.Model.create();
+  var rod7 = M.Model.addRod(m7, [0, 0], [L7, 0]);
+  M.Model.addRevolute(m7, 'ground', rod7.id, [0, 0]);
+  var sys7 = M.System.build(m7, { skipDrivers: true });
+  var st7 = M.System.stateFromModel(sys7);
+  var ia7 = sys7.index[rod7.id];
+  var r7 = M.Analysis.followPoint(sys7, st7.q, ia7, [L7 / 2, 0], [0, L7]);
+  M.System.stateToModel(sys7, st7.q);
+  assert('kyvadlo: sestavení konvergovalo', r7.converged, 'zbytek ' + r7.residual);
+  check('kyvadlo: |COM| = L/2', Math.hypot(rod7.x, rod7.y), L7 / 2, 1e-8);
+  var pEnd7 = M.Model.toGlobal(rod7, [L7 / 2, 0]);
+  check('kyvadlo: volný konec na svislici x', pEnd7[0], 0, 1e-7);
+  check('kyvadlo: volný konec na svislici y', pEnd7[1], L7, 1e-7);
+  var pA7 = M.Model.toGlobal(rod7, [-L7 / 2, 0]);
+  check('kyvadlo: čep zůstává v počátku', Math.hypot(pA7[0], pA7[1]), 0, 1e-9);
+
+  var m7b = M.Examples.build('fourbar');
+  var sys7b = M.System.build(m7b, { skipDrivers: true });
+  var st7b = M.System.stateFromModel(sys7b);
+  var dof7 = M.Analysis.dofAnalysis(sys7b, st7b.q, 0);
+  check('čtyřúhelník bez pohonů: 1 DOF', dof7.dof, 1, 0);
+  var crank7 = m7b.bodies[1];
+  var coupler7 = m7b.bodies[2];
+  var rocker7 = m7b.bodies[3];
+  var phiC0 = crank7.phi, coup0 = [coupler7.x, coupler7.y], rock0 = [rocker7.x, rocker7.y];
+  var sB = [crank7.L / 2, 0];
+  var pB0 = M.Model.toGlobal(crank7, sB);
+  var r7b = M.Analysis.followPoint(sys7b, st7b.q, sys7b.index[crank7.id], sB,
+    [pB0[0] + 0.12, pB0[1] - 0.08]);
+  M.System.stateToModel(sys7b, st7b.q);
+  assert('čtyřúhelník: konvergovalo', r7b.converged && r7b.residual < 1e-9,
+    'zbytek ' + r7b.residual);
+  assert('klika se pootočila', Math.abs(crank7.phi - phiC0) > 0.15,
+    'Δφ=' + (crank7.phi - phiC0).toFixed(4));
+  assert('spojovací tyč se pohnula', Math.hypot(coupler7.x - coup0[0], coupler7.y - coup0[1]) > 0.02);
+  assert('vahadlo se pohnulo', Math.hypot(rocker7.x - rock0[0], rocker7.y - rock0[1]) > 0.02);
+  var maxJ = 0;
+  m7b.joints.forEach(function (j) {
+    var A = M.Model.bodyById(m7b, j.bodyA), B = M.Model.bodyById(m7b, j.bodyB);
+    var pa = M.Model.toGlobal(A, j.sA), pb = M.Model.toGlobal(B, j.sB);
+    maxJ = Math.max(maxJ, Math.hypot(pa[0] - pb[0], pa[1] - pb[1]));
+  });
+  assert('čepy zůstávají splynuté', maxJ < 1e-8, 'max ' + maxJ.toExponential(2));
+}
+
 console.log('\n=== ' + pass + ' OK, ' + fail + ' FAIL ===');
 process.exit(fail ? 1 : 0);
