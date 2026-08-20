@@ -1,0 +1,47 @@
+[
+    {
+        "slotMinutes": 30,
+        "openingHours": {
+            "mon": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "tue": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "wed": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "thu": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "fri": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "sat": {
+                "from": "09:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "sun": {
+                "from": "09:00",
+                "to": "20:00",
+                "closed": false
+            }
+        },
+        "maxAdvanceDays": 60,
+        "minSlots": 1,
+        "maxSlots": 8,
+        "maxRecurrenceWeeks": 26,
+        "timezone": "Europe\/Prague"
+    }
+]

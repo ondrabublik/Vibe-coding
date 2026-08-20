@@ -1,0 +1,86 @@
+[
+    {
+        "id": "f1",
+        "name": "Hřiště 1",
+        "order": 1,
+        "halvesEnabled": false,
+        "halfLabels": {
+            "A": "Levá polovina",
+            "B": "Pravá polovina"
+        },
+        "openingHoursOverride": {
+            "mon": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "tue": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "wed": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "thu": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "fri": {
+                "from": "08:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "sat": {
+                "from": "09:00",
+                "to": "22:00",
+                "closed": false
+            },
+            "sun": {
+                "from": "09:00",
+                "to": "20:00",
+                "closed": false
+            }
+        },
+        "autumnFrom": "2026-08-01",
+        "autumnTo": "2026-11-30",
+        "springFrom": "2027-03-01",
+        "springTo": "2027-06-30",
+        "active": true
+    },
+    {
+        "id": "f2",
+        "name": "Hřiště 2",
+        "order": 2,
+        "halvesEnabled": true,
+        "halfLabels": {
+            "A": "Levá polovina",
+            "B": "Pravá polovina"
+        },
+        "openingHoursOverride": null,
+        "autumnFrom": "2026-08-01",
+        "autumnTo": "2026-11-30",
+        "springFrom": "2027-03-01",
+        "springTo": "2027-06-30",
+        "active": true
+    },
+    {
+        "id": "f3",
+        "name": "Hřiště 3",
+        "order": 3,
+        "halvesEnabled": false,
+        "halfLabels": {
+            "A": "Polovina A",
+            "B": "Polovina B"
+        },
+        "openingHoursOverride": null,
+        "autumnFrom": "2026-08-01",
+        "autumnTo": "2026-11-30",
+        "springFrom": "2027-03-01",
+        "springTo": "2027-06-30",
+        "active": true
+    }
+]

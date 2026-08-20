@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multibody 2D – dynamika mechanismů</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="toolbar">
+    <div class="brand">Multibody&nbsp;2D</div>
+
+    <div class="tgroup">
+      <button id="btn-new" class="tbtn" title="Nový prázdný model">Nový</button>
+      <div class="dropdown">
+        <button id="btn-examples" class="tbtn">Příklady ▾</button>
+        <div id="examples-menu" class="menu"></div>
+      </div>
+      <button id="btn-save" class="tbtn" title="Uložit model jako JSON">Uložit</button>
+      <button id="btn-open" class="tbtn" title="Otevřít model z JSON">Otevřít</button>
+      <input type="file" id="file-input" accept=".json,application/json" hidden>
+    </div>
+
+    <div class="tgroup" id="tools">
+      <button class="tbtn tool" data-tool="select" title="Vybrat / posunout (V)"><span class="ico">⬉</span>Vybrat</button>
+      <button class="tbtn tool" data-tool="rod" title="Nakreslit tyč tažením (R)"><span class="ico">╱</span>Tyč</button>
+      <button class="tbtn tool" data-tool="slider" title="Vložit objímku (O)"><span class="ico">▭</span>Objímka</button>
+      <button class="tbtn tool" data-tool="revolute" title="Rotační vazba – klikněte do místa čepu (1)"><span class="ico">◎</span>Rotační</button>
+      <button class="tbtn tool" data-tool="prismatic" title="Posuvná vazba – klikněte na objímku, tažením určíte osu (2)"><span class="ico">⇔</span>Posuvná</button>
+      <button class="tbtn tool" data-tool="torque" title="Moment na těleso (M)"><span class="ico">↻</span>Moment</button>
+      <button class="tbtn tool" data-tool="force" title="Síla na těleso – klikněte a tažením určete směr (F)"><span class="ico">→</span>Síla</button>
+    </div>
+
+    <div class="tgroup">
+      <button id="btn-assemble" class="tbtn" title="Vyřešit úlohu polohy – složit mechanismus">Sestavit</button>
+      <button id="btn-run" class="tbtn primary" title="Spustit dynamickou analýzu">▶ Analýza</button>
+      <button id="btn-stop" class="tbtn" title="Přerušit výpočet" disabled>■ Stop</button>
+    </div>
+
+    <div class="spacer"></div>
+
+    <div class="tgroup toggles">
+      <label><input type="checkbox" id="opt-grid" checked> mřížka</label>
+      <label><input type="checkbox" id="opt-snap" checked> přichytávání</label>
+      <label><input type="checkbox" id="opt-vel" checked> rychlosti</label>
+      <label><input type="checkbox" id="opt-acc"> zrychlení</label>
+      <label><input type="checkbox" id="opt-reac" checked> reakce</label>
+      <label><input type="checkbox" id="opt-trace" checked> trajektorie</label>
+      <button id="btn-fit" class="tbtn" title="Přizpůsobit zobrazení">⤢ Zoom</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="left">
+      <section class="pane">
+        <h2>Model</h2>
+        <div id="tree" class="tree"></div>
+      </section>
+    </aside>
+
+    <div id="center">
+      <div id="canvas-wrap">
+        <canvas id="view"></canvas>
+        <div id="hint" class="overlay-hint"></div>
+        <div id="coords" class="overlay-coords"></div>
+        <div id="progress" class="progress hidden"><div class="bar"></div><span></span></div>
+      </div>
+      <div id="player">
+        <button id="btn-play" class="tbtn" disabled>▶</button>
+        <button id="btn-rewind" class="tbtn" disabled>⏮</button>
+        <input type="range" id="time-slider" min="0" max="0" value="0" step="1" disabled>
+        <span id="time-label" class="mono">t = 0.000 s</span>
+        <label class="speed">rychlost
+          <select id="speed">
+            <option value="0.1">0,1×</option>
+            <option value="0.25">0,25×</option>
+            <option value="0.5">0,5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <aside id="right">
+      <section class="pane">
+        <h2>Vlastnosti</h2>
+        <div id="inspector" class="form"></div>
+      </section>
+      <section class="pane">
+        <h2>Nastavení analýzy</h2>
+        <div id="simsettings" class="form"></div>
+      </section>
+      <section class="pane">
+        <h2>Stav soustavy</h2>
+        <div id="status" class="status"></div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="splitter" title="Táhnutím změníte velikost panelu výsledků"></div>
+
+  <footer id="results">
+    <div id="signals">
+      <div class="results-head">
+        <strong>Výstupy</strong>
+        <button id="btn-csv" class="tbtn small" disabled>CSV</button>
+        <button id="btn-clear-sig" class="tbtn small">Zrušit výběr</button>
+      </div>
+      <div id="signal-list"></div>
+    </div>
+    <div id="charts"></div>
+  </footer>
+</div>
+
+<script src="js/core/linalg.js"></script>
+<script src="js/core/model.js"></script>
+<script src="js/core/constraints.js"></script>
+<script src="js/core/system.js"></script>
+<script src="js/core/dynamics.js"></script>
+<script src="js/core/analysis.js"></script>
+<script src="js/core/simulation.js"></script>
+<script src="js/core/serialize.js"></script>
+<script src="js/examples/examples.js"></script>
+<script src="js/ui/dom.js"></script>
+<script src="js/ui/viewport.js"></script>
+<script src="js/ui/renderer.js"></script>
+<script src="js/ui/editor.js"></script>
+<script src="js/ui/tree.js"></script>
+<script src="js/ui/inspector.js"></script>
+<script src="js/ui/plots.js"></script>
+<script src="js/ui/app.js"></script>
+</body>
+</html>
