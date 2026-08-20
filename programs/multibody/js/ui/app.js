@@ -192,7 +192,7 @@
     document.addEventListener('keydown', function (ev) {
       var tag = (ev.target.tagName || '').toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-      var map = { v: 'select', r: 'rod', o: 'slider', '1': 'revolute', '2': 'prismatic', m: 'torque', f: 'force' };
+      var map = { v: 'select', r: 'rod', d: 'disk', o: 'slider', '1': 'revolute', '2': 'prismatic', '3': 'rolling', m: 'torque', f: 'force', s: 'spring', t: 'damper' };
       var k = ev.key.toLowerCase();
       if (k === 'k') { setMode(app.mode === 'kinematics' ? 'edit' : 'kinematics'); ev.preventDefault(); return; }
       if (map[k]) { setTool(map[k]); ev.preventDefault(); return; }
@@ -335,6 +335,9 @@
       if (b.type === 'rod') {
         var e = app.editor.rodEndsGlobal(b);
         pts.push(e[0], e[1]);
+      } else if (b.type === 'disk') {
+        var r = b.radius;
+        pts.push([b.x - r, b.y - r], [b.x + r, b.y + r]);
       } else {
         pts.push([b.x - b.width, b.y - b.height], [b.x + b.width, b.y + b.height]);
       }

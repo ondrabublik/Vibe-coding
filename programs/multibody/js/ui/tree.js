@@ -18,17 +18,20 @@
     }));
 
     section('Vazby', model.joints.map(function (j) {
+      var badge = j.type === 'revolute' ? 'R' : (j.type === 'prismatic' ? 'P' : 'V');
       var drv = j.driver && j.driver.enabled
         ? (j.type === 'revolute' ? '↻' : '⇢') : null;
-      return item(j.id, j.type === 'revolute' ? 'R' : 'P', j.name, null, drv);
+      return item(j.id, badge, j.name, null, drv);
     }));
 
     section('Zatížení', model.loads.map(function (l) {
-      return item(l.id, l.type === 'torque' ? 'M' : 'F', l.name, null);
+      var badge = l.type === 'torque' ? 'M' : (l.type === 'spring' ? 'k' : (l.type === 'damper' ? 'c' : 'F'));
+      return item(l.id, badge, l.name, null);
     }));
 
     function info(b) {
       if (b.type === 'rod') return 'L=' + D.fmt(b.L, 3) + ' m';
+      if (b.type === 'disk') return 'R=' + D.fmt(b.radius, 3) + ' m';
       return D.fmt(Model.massOf(b), 3) + ' kg';
     }
 

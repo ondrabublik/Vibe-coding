@@ -2,13 +2,15 @@
  * model.js - definice datového modelu mechanismu.
  *
  * Model je čistě datová struktura (serializovatelná do JSON):
- *   bodies : tělesa  - 'ground' (rám), 'rod' (binární člen / tyč), 'slider' (objímka)
- *   joints : vazby   - 'revolute' (rotační), 'prismatic' (posuvná), volitelně s pohonem
- *   loads  : zatížení - 'torque' (moment), 'force' (síla)
+ *   bodies : tělesa  - 'ground' (rám), 'rod' (tyč), 'slider' (objímka),
+ *                      'disk' (rotační těleso / kotouč)
+ *   joints : vazby   - 'revolute' (rotační), 'prismatic' (posuvná),
+ *                      'rolling' (valivá mezi dvěma kotouči), volitelně s pohonem
+ *   loads  : zatížení - 'torque', 'force', 'spring' (pružina/tlumič)
  *
  * Souřadnice tělesa: x, y = poloha těžiště, phi = otočení [rad].
  * Lokální souřadný systém tělesa má počátek v těžišti, osu x podél tyče
- * (u objímky podél její "delší" strany).
+ * (u objímky podél její "delší" strany, u kotouče značka úhlu).
  */
 (function (root) {
   'use strict';
@@ -18,7 +20,8 @@
 
   Model.DEFAULTS = {
     rod: { lineDensity: 2.0, width: 0.024 },
-    slider: { mass: 0.4, width: 0.08, height: 0.05 }
+    slider: { mass: 0.4, width: 0.08, height: 0.05 },
+    disk: { mass: 1.0, radius: 0.12 }
   };
 
   Model.create = function (name) {
@@ -81,7 +84,33 @@
     if (body.autoInertia === false) return body.inertia;
     var m = Model.massOf(body);
     if (body.type === 'rod') return m * body.L * body.L / 12;
+    if (body.type === 'disk') return 0.5 * m * body.radius * body.radius;
     return m * (body.width * body.width + body.height * body.height) / 12;
+  };
+
+  /** Poloměr kotouče (pro valivou vazbu i zásahovou oblast). */
+  Model.diskRadius = function (body) {
+    return body && body.type === 'disk' ? body.radius : 0;
+  };
+
+  /** Je bod uvnitř objemu tělesa (kotouč / objímka / okolí tyče)? */
+  Model.containsPoint = function (body, p, tol) {
+    if (!body || body.type === 'ground') return false;
+    tol = tol || 0;
+    if (body.type === 'disk') {
+      return Math.hypot(p[0] - body.x, p[1] - body.y) <= body.radius + tol;
+    }
+    if (body.type === 'rod') {
+      var e = Model.rodEnds(body);
+      var a = Model.toGlobal(body, e[0]), b = Model.toGlobal(body, e[1]);
+      var vx = b[0] - a[0], vy = b[1] - a[1];
+      var wx = p[0] - a[0], wy = p[1] - a[1];
+      var L2 = vx * vx + vy * vy;
+      var t = L2 > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / L2)) : 0;
+      return Math.hypot(wx - t * vx, wy - t * vy) <= body.width / 2 + tol;
+    }
+    var l = Model.toLocal(body, p);
+    return Math.abs(l[0]) <= body.width / 2 + tol && Math.abs(l[1]) <= body.height / 2 + tol;
   };
 
   // ----------------------------------------------------------- transformace bod<->svět
@@ -162,6 +191,28 @@
     return body;
   };
 
+  /** Rotační těleso (kotouč) se středem v p. */
+  Model.addDisk = function (model, p, opts) {
+    opts = opts || {};
+    var d = Model.DEFAULTS.disk;
+    var body = {
+      id: Model.uid(model, 'b'),
+      name: opts.name || ('Kotouč ' + model._seq),
+      type: 'disk',
+      radius: opts.radius != null ? opts.radius : d.radius,
+      x: p[0], y: p[1],
+      phi: opts.phi != null ? opts.phi : 0,
+      vx: 0, vy: 0, omega: 0,
+      autoMass: false,
+      mass: opts.mass != null ? opts.mass : d.mass,
+      autoInertia: opts.autoInertia !== false,
+      inertia: 0
+    };
+    body.inertia = Model.inertiaOf(body);
+    model.bodies.push(body);
+    return body;
+  };
+
   /** Přepočte odvozené hmotové vlastnosti (po změně geometrie/hustoty). */
   Model.refreshMass = function (body) {
     if (body.type === 'ground') return;
@@ -171,21 +222,70 @@
 
   // -------------------------------------------------------------------- vazby
 
-  /** Rotační vazba. globalPoint = poloha čepu ve globálních souřadnicích. */
+  /** Rotační vazba. globalPoint = poloha čepu ve globálních souřadnicích.
+   *  opts.bodies – volitelně více těles na stejném čepu (sdílená vazba). */
   Model.addRevolute = function (model, aId, bId, globalPoint, opts) {
     opts = opts || {};
-    var A = Model.bodyById(model, aId), B = Model.bodyById(model, bId);
+    var ids = opts.bodies && opts.bodies.length >= 2 ? opts.bodies.slice() : [aId, bId];
+    // unikátní zachování pořadí
+    var seen = {}, uniq = [];
+    ids.forEach(function (id) {
+      if (!seen[id] && Model.bodyById(model, id)) { seen[id] = true; uniq.push(id); }
+    });
+    if (uniq.length < 2) throw new Error('Rotační vazba vyžaduje alespoň dvě tělesa.');
+    var members = uniq.map(function (id) {
+      return { id: id, s: Model.toLocal(Model.bodyById(model, id), globalPoint) };
+    });
     var joint = {
       id: Model.uid(model, 'j'),
       name: opts.name || ('Rot. vazba ' + model._seq),
       type: 'revolute',
-      bodyA: aId, bodyB: bId,
-      sA: Model.toLocal(A, globalPoint),
-      sB: Model.toLocal(B, globalPoint),
+      bodyA: members[0].id,
+      bodyB: members[1].id,
+      sA: members[0].s,
+      sB: members[1].s,
+      members: members,
       driver: null
     };
     model.joints.push(joint);
     return joint;
+  };
+
+  /** Členové rotační vazby (zpětná kompatibilita se staršími soubory). */
+  Model.revoluteMembers = function (joint) {
+    if (joint.members && joint.members.length >= 2) return joint.members;
+    return [
+      { id: joint.bodyA, s: joint.sA },
+      { id: joint.bodyB, s: joint.sB }
+    ];
+  };
+
+  Model.syncRevolutePair = function (joint) {
+    var m = Model.revoluteMembers(joint);
+    joint.members = m;
+    joint.bodyA = m[0].id;
+    joint.bodyB = m[1].id;
+    joint.sA = m[0].s;
+    joint.sB = m[1].s;
+  };
+
+  /** Připojí další těleso ke stávajícímu čepu (sdílená rotační vazba). */
+  Model.addToRevolute = function (model, joint, bodyId, globalPoint) {
+    if (joint.type !== 'revolute') throw new Error('Lze připojit jen k rotační vazbě.');
+    var mem = Model.revoluteMembers(joint);
+    for (var i = 0; i < mem.length; i++) if (mem[i].id === bodyId) return joint;
+    var B = Model.bodyById(model, bodyId);
+    if (!B) throw new Error('Těleso neexistuje.');
+    var p = globalPoint || Model.jointPoint(model, joint);
+    mem.push({ id: bodyId, s: Model.toLocal(B, p) });
+    joint.members = mem;
+    Model.syncRevolutePair(joint);
+    return joint;
+  };
+
+  /** Je těleso členem rotační vazby? */
+  Model.revoluteHasBody = function (joint, bodyId) {
+    return Model.revoluteMembers(joint).some(function (m) { return m.id === bodyId; });
   };
 
   /**
@@ -214,6 +314,40 @@
     return joint;
   };
 
+  /**
+   * Valivá vazba mezi dvěma kotouči (1 stupeň volnosti).
+   * Předepisuje valení bez skluzu; vzdálenost středů musí zajistit jiná vazba
+   * (typicky rotační uložení obou os).
+   */
+  Model.addRolling = function (model, aId, bId, opts) {
+    opts = opts || {};
+    var A = Model.bodyById(model, aId), B = Model.bodyById(model, bId);
+    if (!A || !B || A.type !== 'disk' || B.type !== 'disk') {
+      throw new Error('Valivá vazba spojuje dvě rotační tělesa (kotouče).');
+    }
+    var side = opts.side === 'internal' ? 'internal' : 'external';
+    var rA = A.radius, rB = B.radius;
+    var dx = B.x - A.x, dy = B.y - A.y;
+    var theta = Math.atan2(dy, dx);
+    var Rsum = side === 'internal' ? Math.abs(rA - rB) : (rA + rB);
+    var sigB = side === 'internal' ? (rA >= rB ? -1 : 1) : 1;
+    var sigTh = side === 'internal' ? (rA >= rB ? -1 : 1) : 1;
+    var offset = rA * A.phi + sigB * rB * B.phi + sigTh * Rsum * theta;
+    var joint = {
+      id: Model.uid(model, 'j'),
+      name: opts.name || ('Valivá ' + model._seq),
+      type: 'rolling',
+      bodyA: aId, bodyB: bId,
+      side: side,
+      sA: [0, 0],
+      sB: [0, 0],
+      offset: offset,
+      driver: null
+    };
+    model.joints.push(joint);
+    return joint;
+  };
+
   /** Pohon vazby: rotační -> úhlová rychlost, posuvná -> rychlost posuvu. */
   Model.setDriver = function (joint, driver) {
     joint.driver = driver;
@@ -223,6 +357,9 @@
   Model.defaultDriver = function (joint) {
     if (joint.type === 'revolute') {
       return { enabled: true, kind: 'rate', rate: 10, expr: '0.5*t*t' };
+    }
+    if (joint.type === 'rolling') {
+      return { enabled: true, kind: 'rate', rate: 5, expr: '0.5*t*t' };
     }
     return { enabled: true, kind: 'rate', rate: 0.2, expr: '0.05*t*t' };
   };
@@ -262,6 +399,70 @@
     return load;
   };
 
+  /**
+   * Lineární pružina (volitelně s tlumením) mezi dvěma body na tělesech.
+   * bodyB může být 'ground'. L0 = klidová délka (výchozí = aktuální délka).
+   */
+  Model.addSpring = function (model, aId, bId, globalA, globalB, opts) {
+    opts = opts || {};
+    var A = Model.bodyById(model, aId), B = Model.bodyById(model, bId);
+    if (!A || !B) throw new Error('Pružina vyžaduje dvě existující tělesa.');
+    var pA = globalA || [A.x, A.y];
+    var pB = globalB || [B.x, B.y];
+    var L = Math.hypot(pB[0] - pA[0], pB[1] - pA[1]);
+    var load = {
+      id: Model.uid(model, 'l'),
+      name: opts.name || ('Pružina ' + model._seq),
+      type: 'spring',
+      bodyA: aId,
+      bodyB: bId,
+      sA: Model.toLocal(A, pA),
+      sB: Model.toLocal(B, pB),
+      k: opts.k != null ? opts.k : 100,
+      c: opts.c != null ? opts.c : 0,
+      L0: opts.L0 != null ? opts.L0 : L
+    };
+    model.loads.push(load);
+    return load;
+  };
+
+  /**
+   * Lineární tlumič (viskózní) mezi dvěma body. Síla F = c·L̇.
+   */
+  Model.addDamper = function (model, aId, bId, globalA, globalB, opts) {
+    opts = opts || {};
+    var A = Model.bodyById(model, aId), B = Model.bodyById(model, bId);
+    if (!A || !B) throw new Error('Tlumič vyžaduje dvě existující tělesa.');
+    var pA = globalA || [A.x, A.y];
+    var pB = globalB || [B.x, B.y];
+    var load = {
+      id: Model.uid(model, 'l'),
+      name: opts.name || ('Tlumič ' + model._seq),
+      type: 'damper',
+      bodyA: aId,
+      bodyB: bId,
+      sA: Model.toLocal(A, pA),
+      sB: Model.toLocal(B, pB),
+      k: 0,
+      c: opts.c != null ? opts.c : 5,
+      L0: 0
+    };
+    model.loads.push(load);
+    return load;
+  };
+
+  /** Aktuální délka pružiny / tlumiče. */
+  Model.springLength = function (model, load) {
+    var A = Model.bodyById(model, load.bodyA), B = Model.bodyById(model, load.bodyB);
+    if (!A || !B) return 0;
+    var pA = Model.toGlobal(A, load.sA), pB = Model.toGlobal(B, load.sB);
+    return Math.hypot(pB[0] - pA[0], pB[1] - pA[1]);
+  };
+
+  Model.isLinkLoad = function (load) {
+    return load && (load.type === 'spring' || load.type === 'damper');
+  };
+
   // --------------------------------------------------------------- odstraňování
 
   Model.remove = function (model, id) {
@@ -269,8 +470,20 @@
     if (body) {
       if (body.type === 'ground') return false;
       model.bodies = model.bodies.filter(function (b) { return b.id !== id; });
-      model.joints = model.joints.filter(function (j) { return j.bodyA !== id && j.bodyB !== id; });
-      model.loads = model.loads.filter(function (l) { return l.body !== id; });
+      model.joints = model.joints.filter(function (j) {
+        if (j.type === 'revolute') {
+          var mem = Model.revoluteMembers(j).filter(function (m) { return m.id !== id; });
+          if (mem.length < 2) return false;
+          j.members = mem;
+          Model.syncRevolutePair(j);
+          return true;
+        }
+        return j.bodyA !== id && j.bodyB !== id;
+      });
+      model.loads = model.loads.filter(function (l) {
+        if (Model.isLinkLoad(l)) return l.bodyA !== id && l.bodyB !== id;
+        return l.body !== id;
+      });
       return true;
     }
     var n0 = model.joints.length + model.loads.length;
@@ -309,6 +522,7 @@
       if (load.mode === 'expr') return Model.compileExpr(load.expr)(t);
       return load.value;
     }
+    if (load.type === 'spring') return null;
     if (load.mode === 'expr') {
       return [Model.compileExpr(load.exprX)(t), Model.compileExpr(load.exprY)(t)];
     }
@@ -322,18 +536,37 @@
       case 'ground': return 'Rám';
       case 'rod': return 'Tyč';
       case 'slider': return 'Objímka';
+      case 'disk': return 'Rotační těleso';
       case 'revolute': return 'Rotační vazba';
       case 'prismatic': return 'Posuvná vazba';
+      case 'rolling': return 'Valivá vazba';
       case 'torque': return 'Moment';
       case 'force': return 'Síla';
+      case 'spring': return 'Pružina';
+      case 'damper': return 'Tlumič';
       default: return item.type;
     }
   };
 
-  /** Globální poloha bodu vazby (na tělese A). */
+  /** Globální poloha bodu vazby (na tělese A); u valivé = bod kontaktu. */
   Model.jointPoint = function (model, joint) {
+    if (joint.type === 'rolling') return Model.rollingContact(model, joint);
     var A = Model.bodyById(model, joint.bodyA);
     return Model.toGlobal(A, joint.sA);
+  };
+
+  /** Bod kontaktu valivé vazby (mezi středy A a B). */
+  Model.rollingContact = function (model, joint) {
+    var A = Model.bodyById(model, joint.bodyA);
+    var B = Model.bodyById(model, joint.bodyB);
+    if (!A || !B) return [0, 0];
+    var dx = B.x - A.x, dy = B.y - A.y;
+    var d = Math.hypot(dx, dy) || 1;
+    var rA = A.radius || 0;
+    if (joint.side === 'internal' && A.radius < B.radius) {
+      return [B.x - (B.radius) * dx / d, B.y - (B.radius) * dy / d];
+    }
+    return [A.x + rA * dx / d, A.y + rA * dy / d];
   };
 
   Model.jointAxis = function (model, joint) {

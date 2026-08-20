@@ -10,9 +10,10 @@
  *   nu    ... pravá strana rychlostní rovnice   J*qd = nu   (nu = -dPhi/dt)
  *   gamma ... pravá strana zrychlovací rovnice  J*qdd = gamma
  *
- * Složené vazby (rotační, posuvná) i pohony jsou skládány z těchto primitiv:
+ * Složené vazby (rotační, posuvná, valivá) i pohony jsou skládány z těchto primitiv:
  *   rotační vazba  = coincident
  *   posuvná vazba  = relAngle(konst) + projection(normála, 0)
+ *   valivá vazba   = rolling(...)          // 1 DOF (kontakt vzdálenosti řeší jiné vazby)
  *   pohon rotační  = relAngle(f(t))
  *   pohon posuvné  = projection(osa, f(t))
  */
@@ -157,6 +158,85 @@
           + dot(u, qb) * wb * wb
           - dot(u, qa) * wa * wa
           + fun.fdd(t);
+      }
+    };
+  };
+
+  /**
+   * Vzdálenost středů (1 rovnice):
+   *   Phi = ||r_B - r_A|| - R = 0
+   * Používá se u valivé vazby (R = rA+rB nebo |rA-rB|).
+   */
+  C.distance = function (ia, ib, R) {
+    return {
+      size: 1,
+      bodies: [ia, ib],
+      label: 'vzdálenost středů',
+      evaluate: function (P, V, t, out) {
+        var pa = P[ia], pb = P[ib], va = V[ia], vb = V[ib];
+        var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+        var dist = Math.hypot(dx, dy);
+        if (dist < 1e-12) dist = 1e-12;
+        var nx = dx / dist, ny = dy / dist;
+        var vrx = vb[0] - va[0], vry = vb[1] - va[1];
+
+        out.c[0] = dist - R;
+        out.J[0][0][0] = -nx; out.J[0][0][1] = -ny; out.J[0][0][2] = 0;
+        out.J[0][1][0] = nx; out.J[0][1][1] = ny; out.J[0][1][2] = 0;
+        out.nu[0] = 0;
+        // d²/dt² ||r|| = (vr·vr - (vr·n)²) / ||r||
+        out.gamma[0] = (vrx * vrx + vry * vry - Math.pow(vrx * nx + vry * ny, 2)) / dist;
+      }
+    };
+  };
+
+  /**
+   * Valení bez skluzu (1 rovnice) pro dva kotouče:
+   *   Phi = rA·φA + σB·rB·φB + σθ·R·θ − offset = 0
+   * kde θ = atan2(yB−yA, xB−xA) je úhel spojnice středů a R je vzdálenost středů.
+   * σB = σθ = +1 pro vnější kontakt; u vnitřního se znaménka volí podle většího poloměru.
+   */
+  C.rolling = function (ia, rA, ib, rB, R, sigB, sigTh, offset) {
+    var lastTheta = null;
+    return {
+      size: 1,
+      bodies: [ia, ib],
+      label: 'valení',
+      evaluate: function (P, V, t, out) {
+        var pa = P[ia], pb = P[ib], va = V[ia], vb = V[ib];
+        var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+        var r2 = dx * dx + dy * dy;
+        if (r2 < 1e-24) r2 = 1e-24;
+        var theta = Math.atan2(dy, dx);
+        // spojité θ (atan2 skáče o ±2π na větvi řezu)
+        if (lastTheta == null) lastTheta = theta;
+        else {
+          while (theta - lastTheta > Math.PI) theta -= 2 * Math.PI;
+          while (theta - lastTheta < -Math.PI) theta += 2 * Math.PI;
+          lastTheta = theta;
+        }
+
+        // dθ/dq: ∂θ/∂xA = dy/r², ∂θ/∂yA = -dx/r², ∂θ/∂xB = -dy/r², ∂θ/∂yB = dx/r²
+        var dtxA = dy / r2, dtyA = -dx / r2;
+        var dtxB = -dy / r2, dtyB = dx / r2;
+
+        out.c[0] = rA * pa[2] + sigB * rB * pb[2] + sigTh * R * theta - offset;
+
+        out.J[0][0][0] = sigTh * R * dtxA;
+        out.J[0][0][1] = sigTh * R * dtyA;
+        out.J[0][0][2] = rA;
+        out.J[0][1][0] = sigTh * R * dtxB;
+        out.J[0][1][1] = sigTh * R * dtyB;
+        out.J[0][1][2] = sigB * rB;
+
+        out.nu[0] = 0;
+
+        // γ = −(dJ/dt)·q̇ = −σθ·R·θ̈_vel,  θ̈_vel = −2·(d·v_rel)·(d×v_rel)/||d||⁴
+        var vrx = vb[0] - va[0], vry = vb[1] - va[1];
+        var cross = dx * vry - dy * vrx;
+        var rad = dx * vrx + dy * vry;
+        var thetaDDvel = -2 * rad * cross / (r2 * r2);
+        out.gamma[0] = -sigTh * R * thetaDDvel;
       }
     };
   };

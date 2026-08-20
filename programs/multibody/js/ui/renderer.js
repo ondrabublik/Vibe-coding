@@ -19,11 +19,18 @@
     rodFill: 'rgba(120,150,185,.28)',
     slider: '#a7c6cd',
     sliderFill: 'rgba(120,170,180,.24)',
+    disk: '#c9b48a',
+    diskFill: 'rgba(180,150,90,.22)',
     ground: '#7a8798',
     joint: '#e9eef5',
     prismatic: '#78d0a0',
+    rolling: '#d0a878',
     driver: '#7cd0a0',
     load: '#f0b350',
+    spring: '#7eb8a8',
+    damper: '#8aa0c8',
+    pin: 'rgba(255,178,63,.55)',
+    pinActive: '#ffb23f',
     sel: '#ffb23f',
     hover: '#4ea1ff',
     vel: '#4ea1ff',
@@ -81,7 +88,10 @@
 
   /** Pomocné těleso s polohou z animace (pro transformace bodů). */
   function posed(body, p) {
-    return { x: p[0], y: p[1], phi: p[2], type: body.type, L: body.L, width: body.width, height: body.height };
+    return {
+      x: p[0], y: p[1], phi: p[2], type: body.type,
+      L: body.L, width: body.width, height: body.height, radius: body.radius
+    };
   }
   R.posed = posed;
 
@@ -217,8 +227,17 @@
     var ctx = vp.ctx;
     var sel = scene.selection && scene.selection.indexOf(body.id) >= 0;
     var hov = scene.hover === body.id;
-    var stroke = sel ? COL.sel : (hov ? COL.hover : (body.type === 'rod' ? COL.rod : COL.slider));
-    var fill = body.type === 'rod' ? COL.rodFill : COL.sliderFill;
+    var stroke, fill;
+    if (body.type === 'rod') {
+      stroke = sel ? COL.sel : (hov ? COL.hover : COL.rod);
+      fill = COL.rodFill;
+    } else if (body.type === 'disk') {
+      stroke = sel ? COL.sel : (hov ? COL.hover : COL.disk);
+      fill = COL.diskFill;
+    } else {
+      stroke = sel ? COL.sel : (hov ? COL.hover : COL.slider);
+      fill = COL.sliderFill;
+    }
     var pb = posed(body, p);
 
     if (body.type === 'rod') {
@@ -236,6 +255,27 @@
       var rPx = Math.max(3.5, wPx * 0.42);
       circle(vp, a, rPx, stroke, '#0f1216', sel ? 2 : 1.4);
       circle(vp, b, rPx, stroke, '#0f1216', sel ? 2 : 1.4);
+    } else if (body.type === 'disk') {
+      var r = body.radius;
+      var cx = vp.sx(p[0]), cy = vp.sy(p[1]);
+      var rDraw = Math.max(4, r * vp.scale);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, rDraw, 0, 2 * Math.PI);
+      ctx.fillStyle = fill; ctx.fill();
+      ctx.strokeStyle = stroke; ctx.lineWidth = sel ? 2.4 : 1.6; ctx.stroke();
+      // značka úhlu (poloměr)
+      var tip = Model.toGlobal(pb, [r, 0]);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(vp.sx(tip[0]), vp.sy(tip[1]));
+      ctx.strokeStyle = stroke; ctx.lineWidth = sel ? 2 : 1.4; ctx.stroke();
+      ctx.restore();
+      if (sel) {
+        var hp = Model.toGlobal(pb, [r + 26 / vp.scale, 0]);
+        line(vp, [p[0], p[1]], hp, COL.sel, 1, [3, 3]);
+        circle(vp, hp, 4, COL.sel, '#0f1216', 1.5);
+      }
     } else {
       var w = body.width / 2, h = body.height / 2;
       var pts = [[-w, -h], [w, -h], [w, h], [-w, h]].map(function (s) { return Model.toGlobal(pb, s); });
@@ -250,9 +290,9 @@
       ctx.strokeStyle = stroke; ctx.lineWidth = sel ? 2.4 : 1.6; ctx.stroke();
       ctx.restore();
       if (sel) {
-        var hp = Model.toGlobal(pb, [body.width / 2 + 26 / vp.scale, 0]);
-        line(vp, [p[0], p[1]], hp, COL.sel, 1, [3, 3]);
-        circle(vp, hp, 4, COL.sel, '#0f1216', 1.5);
+        var hp2 = Model.toGlobal(pb, [body.width / 2 + 26 / vp.scale, 0]);
+        line(vp, [p[0], p[1]], hp2, COL.sel, 1, [3, 3]);
+        circle(vp, hp2, 4, COL.sel, '#0f1216', 1.5);
       }
     }
 
@@ -280,6 +320,18 @@
 
   function jointPointGlobal(scene, joint, poseOf, which) {
     var model = scene.model;
+    if (joint.type === 'rolling') {
+      var A = Model.bodyById(model, joint.bodyA);
+      var B = Model.bodyById(model, joint.bodyB);
+      if (!A || !B) return [0, 0];
+      var pa = poseOf(joint.bodyA), pb = poseOf(joint.bodyB);
+      var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+      var d = Math.hypot(dx, dy) || 1;
+      if (joint.side === 'internal' && A.radius < B.radius) {
+        return [pb[0] - B.radius * dx / d, pb[1] - B.radius * dy / d];
+      }
+      return [pa[0] + A.radius * dx / d, pa[1] + A.radius * dy / d];
+    }
     var id = which === 'B' ? joint.bodyB : joint.bodyA;
     var body = Model.bodyById(model, id);
     if (!body) return [0, 0];
@@ -305,17 +357,35 @@
     if (joint.type === 'revolute') {
       circle(vp, p, 6, col, '#0f1216', sel ? 2.4 : 1.8);
       circle(vp, p, 1.6, col, col, 1);
+    } else if (joint.type === 'rolling') {
+      col = sel ? COL.sel : (hov ? COL.hover : COL.rolling);
+      var A = Model.bodyById(scene.model, joint.bodyA);
+      var B = Model.bodyById(scene.model, joint.bodyB);
+      var pa = poseOf(joint.bodyA), pb = poseOf(joint.bodyB);
+      line(vp, [pa[0], pa[1]], [pb[0], pb[1]], col, 1, [4, 3]);
+      circle(vp, p, 5, col, 'rgba(208,168,120,.35)', sel ? 2.2 : 1.6);
+      // tečna v kontaktu
+      var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+      var d = Math.hypot(dx, dy) || 1;
+      var tx = -dy / d, ty = dx / d;
+      var half = 14 / vp.scale;
+      line(vp, [p[0] - tx * half, p[1] - ty * half], [p[0] + tx * half, p[1] + ty * half],
+        col, sel ? 2.4 : 1.8);
+      if (A && B) {
+        label(vp, p, joint.side === 'internal' ? 'valení (vnitřní)' : 'valení',
+          col, 10, -12);
+      }
     } else {
       // symbol posuvné vazby: dvě vodicí čáry po stranách kluzného tělesa
       var ax = jointAxisGlobal(scene, joint, poseOf);
       var c = jointPointGlobal(scene, joint, poseOf, 'B');
       var n = [-ax[1], ax[0]];
       var off = 10 / vp.scale;
-      var half = 18 / vp.scale;
+      var halfP = 18 / vp.scale;
       for (var s = -1; s <= 1; s += 2) {
         line(vp,
-          [c[0] - ax[0] * half + n[0] * off * s, c[1] - ax[1] * half + n[1] * off * s],
-          [c[0] + ax[0] * half + n[0] * off * s, c[1] + ax[1] * half + n[1] * off * s],
+          [c[0] - ax[0] * halfP + n[0] * off * s, c[1] - ax[1] * halfP + n[1] * off * s],
+          [c[0] + ax[0] * halfP + n[0] * off * s, c[1] + ax[1] * halfP + n[1] * off * s],
           col, sel ? 2.6 : 2);
       }
     }
@@ -327,15 +397,17 @@
         momentArrow(vp, p, 15, rate >= 0, COL.driver);
         txt = joint.driver.kind === 'rate'
           ? 'ω = ' + MBD.Dom.roundStr(joint.driver.rate) + ' rad/s' : 'pohon φ(t)';
-      } else {
+      } else if (joint.type === 'prismatic') {
         var a2 = jointAxisGlobal(scene, joint, poseOf);
         var c2 = jointPointGlobal(scene, joint, poseOf, 'B');
         var sgn = rate >= 0 ? 1 : -1;
         arrowPx(vp, c2, [a2[0] * 26 * sgn, -a2[1] * 26 * sgn], COL.driver, 2, 9);
         txt = joint.driver.kind === 'rate'
           ? 'v = ' + MBD.Dom.roundStr(joint.driver.rate) + ' m/s' : 'pohon s(t)';
+      } else {
+        txt = null;
       }
-      label(vp, p, txt, COL.driver, 18, 14);
+      if (txt) label(vp, p, txt, COL.driver, 18, 14);
     }
   }
 
@@ -361,13 +433,14 @@
       ctx.moveTo(x, y); ctx.lineTo(x - 11, y + 16); ctx.lineTo(x + 11, y + 16); ctx.closePath();
       ctx.stroke();
       hatch(ctx, x - 15, y + 16, 30, 7);
-    } else {
+    } else if (joint.type === 'prismatic') {
       var ax = jointAxisGlobal(scene, joint, poseOf);
       var ang = Math.atan2(-ax[1], ax[0]);
       ctx.translate(x, y); ctx.rotate(ang);
       ctx.beginPath(); ctx.moveTo(-34, 15); ctx.lineTo(34, 15); ctx.stroke();
       hatch(ctx, -34, 15, 68, 7);
     }
+    // valivá vazba s rámem se nekreslí (kotouče nejsou rám)
     ctx.restore();
   }
 
@@ -387,6 +460,10 @@
   // ------------------------------------------------------------------ zatížení
 
   function drawLoad(vp, scene, load, poseOf) {
+    if (load.type === 'spring' || load.type === 'damper') {
+      drawSpring(vp, scene, load, poseOf);
+      return;
+    }
     var body = Model.bodyById(scene.model, load.body);
     if (!body) return;
     var sel = scene.selection && scene.selection.indexOf(load.id) >= 0;
@@ -411,6 +488,73 @@
       circle(vp, pt, 2.5, col, col, 1);
       label(vp, pt, 'F = ' + MBD.Dom.fmt(mag, 1) + ' N', col, 8, 12);
     }
+  }
+
+  function drawSpring(vp, scene, load, poseOf) {
+    var A = Model.bodyById(scene.model, load.bodyA);
+    var B = Model.bodyById(scene.model, load.bodyB);
+    if (!A || !B) return;
+    var sel = scene.selection && scene.selection.indexOf(load.id) >= 0;
+    var isDamper = load.type === 'damper';
+    var col = sel ? COL.sel : (isDamper ? COL.damper : COL.spring);
+    var pa = Model.toGlobal(posed(A, poseOf(load.bodyA)), load.sA);
+    var pb = Model.toGlobal(posed(B, poseOf(load.bodyB)), load.sB);
+    var ctx = vp.ctx;
+    var dx = pb[0] - pa[0], dy = pb[1] - pa[1];
+    var L = Math.hypot(dx, dy) || 1e-9;
+    var ux = dx / L, uy = dy / L;
+    var px = -uy, py = ux;
+    var mid = [(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2];
+
+    if (isDamper) {
+      // symbol tlumiče: tyč – válec – tyč
+      var a1 = [pa[0] + ux * L * 0.22, pa[1] + uy * L * 0.22];
+      var a2 = [pa[0] + ux * L * 0.78, pa[1] + uy * L * 0.78];
+      line(vp, pa, a1, col, sel ? 2 : 1.5);
+      line(vp, a2, pb, col, sel ? 2 : 1.5);
+      var hw = 7 / vp.scale, hl = L * 0.18;
+      var box = [
+        [mid[0] - ux * hl - px * hw, mid[1] - uy * hl - py * hw],
+        [mid[0] + ux * hl - px * hw, mid[1] + uy * hl - py * hw],
+        [mid[0] + ux * hl + px * hw, mid[1] + uy * hl + py * hw],
+        [mid[0] - ux * hl + px * hw, mid[1] - uy * hl + py * hw]
+      ];
+      ctx.save();
+      ctx.beginPath();
+      box.forEach(function (q, i) {
+        var X = vp.sx(q[0]), Y = vp.sy(q[1]);
+        if (i === 0) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = col; ctx.lineWidth = sel ? 2.2 : 1.6; ctx.stroke();
+      ctx.restore();
+      line(vp, [mid[0] - px * hw * 0.7, mid[1] - py * hw * 0.7],
+        [mid[0] + px * hw * 0.7, mid[1] + py * hw * 0.7], col, 1.4);
+      label(vp, mid, 'c=' + MBD.Dom.fmt(load.c, 1), col, 8, -10);
+    } else {
+      var coils = Math.max(6, Math.min(14, Math.round(L * vp.scale / 8)));
+      var amp = 6 / vp.scale;
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = sel ? 2.2 : 1.6;
+      ctx.beginPath();
+      ctx.moveTo(vp.sx(pa[0]), vp.sy(pa[1]));
+      for (var i = 1; i < coils; i++) {
+        var t = i / coils;
+        var s = (i % 2 === 0 ? 1 : -1) * amp;
+        var x = pa[0] + ux * L * t + px * s;
+        var y = pa[1] + uy * L * t + py * s;
+        ctx.lineTo(vp.sx(x), vp.sy(y));
+      }
+      ctx.lineTo(vp.sx(pb[0]), vp.sy(pb[1]));
+      ctx.stroke();
+      ctx.restore();
+      var txt = 'k=' + MBD.Dom.fmt(load.k, 0);
+      if (load.c) txt += ', c=' + MBD.Dom.fmt(load.c, 1);
+      label(vp, mid, txt, col, 8, -10);
+    }
+    circle(vp, pa, 3.5, col, '#0f1216', 1.4);
+    circle(vp, pb, 3.5, col, '#0f1216', 1.4);
   }
 
   // -------------------------------------------------------------- vektory (výsledky)
@@ -476,6 +620,16 @@
       circle(vp, pv.b, 3, COL.hover, COL.hover, 1);
       var L = Math.hypot(pv.b[0] - pv.a[0], pv.b[1] - pv.a[1]);
       label(vp, pv.b, 'L = ' + MBD.Dom.fmt(L, 3) + ' m', COL.hover, 8, -8);
+    } else if (pv.type === 'disk') {
+      var rPrev = Math.max(0, pv.r || 0);
+      var rPx = Math.max(2, rPrev * vp.scale);
+      circle(vp, pv.a, rPx, COL.hover, 'rgba(78,161,255,.12)', 1.6);
+      circle(vp, pv.a, 3, COL.hover, COL.hover, 1);
+      if (pv.b && rPrev > 0) {
+        line(vp, pv.a, pv.b, COL.hover, 1.2, [5, 4]);
+        circle(vp, pv.b, 3, COL.hover, COL.hover, 1);
+        label(vp, pv.b, 'Ø = ' + MBD.Dom.fmt(2 * rPrev, 3) + ' m', COL.hover, 8, -8);
+      }
     } else if (pv.type === 'axis') {
       var len = Math.max(0.1, 120 / vp.scale);
       var d = Math.hypot(pv.dir[0], pv.dir[1]) || 1;
@@ -488,6 +642,21 @@
       var dx = (pv.b[0] - pv.a[0]) * vp.scale, dy = -(pv.b[1] - pv.a[1]) * vp.scale;
       arrowPx(vp, pv.a, [dx, dy], COL.load, 2, 10);
       label(vp, pv.b, pv.text || '', COL.load, 8, -8);
+    } else if (pv.type === 'spring' || pv.type === 'damper') {
+      var colL = pv.type === 'damper' ? COL.damper : COL.spring;
+      line(vp, pv.a, pv.b, colL, 2, [5, 4]);
+      circle(vp, pv.a, 3.5, colL, colL, 1);
+      circle(vp, pv.b, 3.5, colL, colL, 1);
+      var Ls = Math.hypot(pv.b[0] - pv.a[0], pv.b[1] - pv.a[1]);
+      label(vp, pv.b, 'L = ' + MBD.Dom.fmt(Ls, 3) + ' m', colL, 8, -8);
+    } else if (pv.type === 'revolute-sites') {
+      (pv.sites || []).forEach(function (q) {
+        circle(vp, q, 5, COL.pin, 'rgba(255,178,63,.15)', 1.2);
+      });
+      (pv.active || []).forEach(function (q) {
+        circle(vp, q, 8, COL.pinActive, 'rgba(255,178,63,.35)', 2);
+      });
+      if (pv.a) circle(vp, pv.a, 7, COL.hover, 'rgba(78,161,255,.25)', 1.5);
     } else if (pv.type === 'point') {
       circle(vp, pv.a, 7, COL.hover, 'rgba(78,161,255,.2)', 1.5);
     } else if (pv.type === 'box') {

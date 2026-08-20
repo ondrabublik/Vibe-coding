@@ -37,7 +37,28 @@
     m.joints = m.joints.filter(function (j) {
       return Model.bodyById(m, j.bodyA) && Model.bodyById(m, j.bodyB);
     });
-    m.loads = m.loads.filter(function (l) { return Model.bodyById(m, l.body); });
+    m.joints.forEach(function (j) {
+      if (j.type === 'revolute') {
+        if (!j.members) {
+          j.members = [
+            { id: j.bodyA, s: j.sA },
+            { id: j.bodyB, s: j.sB }
+          ];
+        }
+        j.members = j.members.filter(function (mem) { return Model.bodyById(m, mem.id); });
+        if (j.members.length >= 2) Model.syncRevolutePair(j);
+      }
+    });
+    m.joints = m.joints.filter(function (j) {
+      if (j.type === 'revolute') return Model.revoluteMembers(j).length >= 2;
+      return Model.bodyById(m, j.bodyA) && Model.bodyById(m, j.bodyB);
+    });
+    m.loads = m.loads.filter(function (l) {
+      if (l.type === 'spring' || l.type === 'damper') {
+        return Model.bodyById(m, l.bodyA) && Model.bodyById(m, l.bodyB);
+      }
+      return Model.bodyById(m, l.body);
+    });
 
     var maxSeq = 1;
     [].concat(m.bodies, m.joints, m.loads).forEach(function (it) {

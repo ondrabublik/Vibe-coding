@@ -74,6 +74,14 @@
       c.appendChild(D.numberRow('Šířka (kresba) [m]', b.width, function (v) {
         b.width = Math.max(0.001, v); app.modelChanged();
       }, { step: 0.005 }));
+    } else if (b.type === 'disk') {
+      c.appendChild(D.numberRow('Poloměr R [m]', b.radius, function (v) {
+        b.radius = Math.max(0.005, v); Model.refreshMass(b); app.modelChanged();
+      }, { step: 0.01 }));
+      c.appendChild(D.el('div', {
+        class: 'hint',
+        text: 'Tyč lze připojit rotační vazbou kamkoliv uvnitř kotouče (nástroj Tyč nebo Rotační).'
+      }));
     } else {
       c.appendChild(D.numberRow('Šířka [m]', b.width, function (v) {
         b.width = Math.max(0.005, v); Model.refreshMass(b); app.modelChanged();
@@ -146,27 +154,92 @@
     var A = Model.bodyById(model, j.bodyA), B = Model.bodyById(model, j.bodyB);
     c.appendChild(D.section(Model.typeLabel(j)));
     c.appendChild(D.textRow('Název', j.name, function (v) { j.name = v; app.modelChanged(); }));
-    c.appendChild(D.roRow('Těleso A', A ? A.name : '?'));
-    c.appendChild(D.roRow('Těleso B', B ? B.name : '?'));
+    if (j.type === 'revolute') {
+      var mem = Model.revoluteMembers(j);
+      c.appendChild(D.roRow('Členové čepu', mem.map(function (m) {
+        var b = Model.bodyById(model, m.id);
+        return b ? b.name : m.id;
+      }).join(', ')));
+      if (mem.length > 2) {
+        c.appendChild(D.el('div', {
+          class: 'hint',
+          text: 'Sdílený čep: ' + mem.length + ' těles. Další těleso připojíte nástrojem Rotační kliknutím na čep.'
+        }));
+      }
+    } else {
+      c.appendChild(D.roRow('Těleso A', A ? A.name : '?'));
+      c.appendChild(D.roRow('Těleso B', B ? B.name : '?'));
+    }
     c.appendChild(D.el('div', { class: 'btnrow' }, [
       btn('Zaměnit A ↔ B', function () {
-        var a = j.bodyA, sa = j.sA;
-        j.bodyA = j.bodyB; j.sA = j.sB;
-        j.bodyB = a; j.sB = sa;
+        if (j.type === 'revolute') {
+          var members = Model.revoluteMembers(j);
+          if (members.length >= 2) {
+            var tmp = members[0];
+            members[0] = members[1];
+            members[1] = tmp;
+            j.members = members;
+            Model.syncRevolutePair(j);
+          }
+        } else {
+          var a = j.bodyA, sa = j.sA;
+          j.bodyA = j.bodyB; j.sA = j.sB;
+          j.bodyB = a; j.sB = sa;
+        }
         if (j.type === 'prismatic') {
           var na = Model.bodyById(model, j.bodyA);
           var ob = Model.bodyById(model, j.bodyB);
           j.axisA = Model.dirToLocal(na, Model.dirToGlobal(ob, j.axisA));
           j.angleOffset = na.phi - ob.phi;
+        } else if (j.type === 'rolling') {
+          var Aa = Model.bodyById(model, j.bodyA);
+          var Bb = Model.bodyById(model, j.bodyB);
+          if (Aa && Bb) {
+            var dx = Bb.x - Aa.x, dy = Bb.y - Aa.y;
+            var R = j.side === 'internal' ? Math.abs(Aa.radius - Bb.radius) : (Aa.radius + Bb.radius);
+            var theta = Math.atan2(dy, dx);
+            var sigB = 1, sigTh = 1;
+            if (j.side === 'internal' && Aa.radius >= Bb.radius) { sigB = -1; sigTh = -1; }
+            j.offset = Aa.radius * Aa.phi + sigB * Bb.radius * Bb.phi + sigTh * R * theta;
+          }
         }
         app.modelChanged();
       })
     ]));
 
     var p = Model.jointPoint(model, j);
-    c.appendChild(D.section(j.type === 'revolute' ? 'Poloha čepu' : 'Bod na ose'));
-    c.appendChild(D.numberRow('x [m]', p[0], function (v) { setPoint(app, j, [v, p[1]]); }, { step: 0.01 }));
-    c.appendChild(D.numberRow('y [m]', p[1], function (v) { setPoint(app, j, [p[0], v]); }, { step: 0.01 }));
+    c.appendChild(D.section(j.type === 'revolute' ? 'Poloha čepu' :
+      (j.type === 'rolling' ? 'Bod kontaktu' : 'Bod na ose')));
+    if (j.type !== 'rolling') {
+      c.appendChild(D.numberRow('x [m]', p[0], function (v) { setPoint(app, j, [v, p[1]]); }, { step: 0.01 }));
+      c.appendChild(D.numberRow('y [m]', p[1], function (v) { setPoint(app, j, [p[0], v]); }, { step: 0.01 }));
+    } else {
+      c.appendChild(D.roRow('x, y [m]', D.fmt(p[0], 4) + ' , ' + D.fmt(p[1], 4)));
+      c.appendChild(D.selectRow('Kontakt', j.side === 'internal' ? 'internal' : 'external', [
+        { value: 'external', label: 'vnější' },
+        { value: 'internal', label: 'vnitřní' }
+      ], function (v) {
+        j.side = v;
+        var Aa = Model.bodyById(model, j.bodyA), Bb = Model.bodyById(model, j.bodyB);
+        if (Aa && Bb && Aa.type === 'disk' && Bb.type === 'disk') {
+          var dx = Bb.x - Aa.x, dy = Bb.y - Aa.y;
+          var d = Math.hypot(dx, dy) || 1;
+          var R = v === 'internal' ? Math.abs(Aa.radius - Bb.radius) : (Aa.radius + Bb.radius);
+          Bb.x = Aa.x + dx / d * R;
+          Bb.y = Aa.y + dy / d * R;
+          var theta = Math.atan2(Bb.y - Aa.y, Bb.x - Aa.x);
+          var sigB = 1, sigTh = 1;
+          if (v === 'internal' && Aa.radius >= Bb.radius) { sigB = -1; sigTh = -1; }
+          j.offset = Aa.radius * Aa.phi + sigB * Bb.radius * Bb.phi + sigTh * R * theta;
+        }
+        app.modelChanged();
+      }));
+      c.appendChild(D.el('div', {
+        class: 'hint',
+        text: 'Valivá vazba odebírá 1 stupeň volnosti (valení bez skluzu). ' +
+          'Vzdálenost středů zajistěte uložením os (rotační vazby na rám).'
+      }));
+    }
 
     if (j.type === 'prismatic') {
       var ax = Model.jointAxis(model, j);
@@ -182,6 +255,7 @@
     }
 
     // ------------------------------------------------------------- pohon
+    if (j.type !== 'rolling') {
     c.appendChild(D.section('Pohon'));
     var has = !!(j.driver && j.driver.enabled);
     c.appendChild(D.checkRow('Předepsaný pohyb', has, function (v) {
@@ -222,21 +296,34 @@
           'resp. ve směru osy).'
       }));
     }
+    }
 
     c.appendChild(resultBox(app, j.id));
     c.appendChild(D.el('div', { class: 'btnrow' }, [btn('Smazat', function () { app.deleteSelection(); })]));
   }
 
   function setPoint(app, j, p) {
-    var A = Model.bodyById(app.model, j.bodyA), B = Model.bodyById(app.model, j.bodyB);
-    j.sA = Model.toLocal(A, p);
-    if (j.type === 'revolute') j.sB = Model.toLocal(B, p);
+    if (j.type === 'revolute') {
+      Model.revoluteMembers(j).forEach(function (m) {
+        var bm = Model.bodyById(app.model, m.id);
+        if (bm) m.s = Model.toLocal(bm, p);
+      });
+      Model.syncRevolutePair(j);
+    } else {
+      var A = Model.bodyById(app.model, j.bodyA), B = Model.bodyById(app.model, j.bodyB);
+      j.sA = Model.toLocal(A, p);
+      if (j.type === 'revolute') j.sB = Model.toLocal(B, p);
+    }
     app.modelChanged();
   }
 
   // ------------------------------------------------------------------ zatížení
 
   function loadForm(c, app, l) {
+    if (l.type === 'spring' || l.type === 'damper') {
+      springForm(c, app, l);
+      return;
+    }
     var b = Model.bodyById(app.model, l.body);
     c.appendChild(D.section(Model.typeLabel(l)));
     c.appendChild(D.textRow('Název', l.name, function (v) { l.name = v; app.modelChanged(); }));
@@ -272,6 +359,44 @@
       }
     }
     c.appendChild(D.el('div', { class: 'btnrow' }, [btn('Smazat', function () { app.deleteSelection(); })]));
+  }
+
+  function springForm(c, app, l) {
+    var A = Model.bodyById(app.model, l.bodyA);
+    var B = Model.bodyById(app.model, l.bodyB);
+    var isDamper = l.type === 'damper';
+    c.appendChild(D.section(isDamper ? 'Tlumič' : 'Pružina'));
+    c.appendChild(D.textRow('Název', l.name, function (v) { l.name = v; app.modelChanged(); }));
+    c.appendChild(D.roRow('Těleso A', A ? A.name : '?'));
+    c.appendChild(D.roRow('Těleso B', B ? B.name : '?'));
+    if (!isDamper) {
+      c.appendChild(D.numberRow('Tuhost k [N/m]', l.k, function (v) {
+        l.k = Math.max(0, v); app.modelChanged();
+      }, { step: 10 }));
+    }
+    c.appendChild(D.numberRow('Tlumení c [N·s/m]', l.c || 0, function (v) {
+      l.c = Math.max(0, v); app.modelChanged();
+    }, { step: 0.5 }));
+    if (!isDamper) {
+      c.appendChild(D.numberRow('Klidová délka L₀ [m]', l.L0, function (v) {
+        l.L0 = Math.max(0, v); app.modelChanged();
+      }, { step: 0.01 }));
+      var Lnow = Model.springLength(app.model, l);
+      c.appendChild(D.roRow('Aktuální L [m]', D.fmt(Lnow, 4)));
+      c.appendChild(D.roRow('Prodloužení [m]', D.fmt(Lnow - l.L0, 4)));
+      c.appendChild(D.el('div', { class: 'btnrow' }, [
+        btn('L₀ = aktuální L', function () {
+          l.L0 = Model.springLength(app.model, l); app.modelChanged();
+        }),
+        btn('Smazat', function () { app.deleteSelection(); })
+      ]));
+    } else {
+      c.appendChild(D.roRow('Aktuální L [m]', D.fmt(Model.springLength(app.model, l), 4)));
+      c.appendChild(D.el('div', { class: 'hint', text: 'Síla tlumiče F = −c · Ľ (viskózní).' }));
+      c.appendChild(D.el('div', { class: 'btnrow' }, [
+        btn('Smazat', function () { app.deleteSelection(); })
+      ]));
+    }
   }
 
   function exprRow(label, value, onChange) {

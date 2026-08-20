@@ -18,6 +18,7 @@
   var MBD = root.MBD || (root.MBD = {});
   var LA = MBD.LA;
   var Sys = MBD.System;
+  var C = MBD.Constraints;
   var Dyn = {};
 
   /**
@@ -96,11 +97,28 @@
         }
       }
 
-      // moment k bodu vazby (bod je definován na tělese A)
+      // moment k bodu vazby (bod je definován na tělese A; u valivé = kontakt)
       var pa = sys.P[g.bodyAIndex], pb = sys.P[g.bodyBIndex];
-      var sA = g.joint.sA || [0, 0];
-      var rs = C.rot(pa[2], sA);
-      var px = pa[0] + rs[0], py = pa[1] + rs[1];
+      var px, py;
+      if (g.type === 'rolling') {
+        var dxc = pb[0] - pa[0], dyc = pb[1] - pa[1];
+        var dc = Math.hypot(dxc, dyc) || 1;
+        var bodyA = sys.bodies[g.bodyAIndex];
+        var rA = bodyA.radius || 0;
+        if (g.joint.side === 'internal' && bodyA.radius < sys.bodies[g.bodyBIndex].radius) {
+          var bodyB = sys.bodies[g.bodyBIndex];
+          px = pb[0] - bodyB.radius * dxc / dc;
+          py = pb[1] - bodyB.radius * dyc / dc;
+        } else {
+          px = pa[0] + rA * dxc / dc;
+          py = pa[1] + rA * dyc / dc;
+        }
+      } else {
+        var sA = g.joint.sA || [0, 0];
+        var rs = C.rot(pa[2], sA);
+        px = pa[0] + rs[0];
+        py = pa[1] + rs[1];
+      }
       var dx = px - pb[0], dy = py - pb[1];
       var Mpoint = onB[2] - (dx * onB[1] - dy * onB[0]);
 
@@ -133,15 +151,30 @@
     return e;
   };
 
-  /** Potenciální energie v tíhovém poli (vztažená k počátku). */
+  /** Potenciální energie v tíhovém poli (vztažená k počátku) + pružiny. */
   Dyn.potentialEnergy = function (sys, q) {
     var gm = sys.model.gravity;
-    if (!gm || !gm.enabled) return 0;
     var e = 0;
-    for (var i = 0; i < sys.freeBodies.length; i++) {
-      var k = sys.dofIndex[sys.freeBodies[i]];
-      var m = sys.Mdiag[k];
-      e -= m * (gm.gx * q[k] + gm.gy * q[k + 1]);
+    var i, k;
+    if (gm && gm.enabled) {
+      for (i = 0; i < sys.freeBodies.length; i++) {
+        k = sys.dofIndex[sys.freeBodies[i]];
+        var m = sys.Mdiag[k];
+        e -= m * (gm.gx * q[k] + gm.gy * q[k + 1]);
+      }
+    }
+    Sys.scatter(sys, q, null);
+    for (i = 0; i < sys.loads.length; i++) {
+      var load = sys.loads[i].load;
+      if (load.type !== 'spring') continue;
+      var ia = sys.loads[i].bodyIndex, ib = sys.loads[i].bodyBIndex;
+      var pa = sys.P[ia], pb = sys.P[ib];
+      var sa = C.rot(pa[2], load.sA || [0, 0]);
+      var sb = C.rot(pb[2], load.sB || [0, 0]);
+      var L = Math.hypot(pb[0] + sb[0] - pa[0] - sa[0], pb[1] + sb[1] - pa[1] - sa[1]);
+      var L0 = load.L0 != null ? load.L0 : L;
+      var kk = load.k != null ? load.k : 0;
+      e += 0.5 * kk * (L - L0) * (L - L0);
     }
     return e;
   };

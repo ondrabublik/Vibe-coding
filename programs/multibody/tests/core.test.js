@@ -242,5 +242,147 @@ console.log('\n[7] Kinematika – tažení bodu při zachování vazeb');
   assert('čepy zůstávají splynuté', maxJ < 1e-8, 'max ' + maxJ.toExponential(2));
 }
 
+// --------------------------------------------- 8. valivá vazba dvou kotoučů
+console.log('\n[8] Valivá vazba (1 DOF) – převod úhlů a připojení tyče mimo střed');
+{
+  var m8 = M.Model.create();
+  m8.gravity.enabled = false;
+  var r1 = 0.15, r2 = 0.1;
+  var d1 = M.Model.addDisk(m8, [0, 0], { radius: r1, mass: 2 });
+  var d2 = M.Model.addDisk(m8, [r1 + r2, 0], { radius: r2, mass: 1 });
+  var pin8 = M.Model.addRevolute(m8, 'ground', d1.id, [0, 0]);
+  M.Model.addRevolute(m8, 'ground', d2.id, [r1 + r2, 0]);
+  M.Model.setDriver(pin8, { enabled: true, kind: 'rate', rate: 4 });
+  M.Model.addRolling(m8, d1.id, d2.id, { side: 'external' });
+  var attach8 = [0.08, 0.05];
+  var rod8 = M.Model.addRod(m8, attach8, [0.4, 0.05], { lineDensity: 1 });
+  M.Model.addRevolute(m8, d1.id, rod8.id, attach8);
+  assert('čep tyče mimo střed', Math.hypot(attach8[0], attach8[1]) > 0.02);
+
+  m8.sim.tEnd = 1.5; m8.sim.h = 0.0005; m8.sim.recordEvery = 10;
+  var run8 = M.Simulation.runSync(m8);
+  assert('běh bez chyby', !run8.error, run8.error || '');
+  check('stupně volnosti', run8.dof.dof, 1, 0); // kyv volného konce tyče
+  check('valivá vazba: 1 rovnice', run8.sys.groups.filter(function (g) {
+    return g.type === 'rolling' && g.kind === 'joint';
+  })[0].size, 1, 0);
+  var viol8 = sig(run8, 'system/viol');
+  assert('vazby splněny (< 1e-8)', Math.max.apply(null, viol8.map(Math.abs)) < 1e-8,
+    '(' + Math.max.apply(null, viol8.map(Math.abs)).toExponential(2) + ')');
+
+  var phi1 = sig(run8, d1.id + '/phi');
+  var phi2 = sig(run8, d2.id + '/phi');
+  // pevné středy ⇒ r1 Δφ1 + r2 Δφ2 ≈ 0
+  var mid = Math.floor(phi1.length / 2);
+  var dphi1 = (phi1[mid] - phi1[0]) * Math.PI / 180;
+  var dphi2 = (phi2[mid] - phi2[0]) * Math.PI / 180;
+  check('převod r1 Δφ1 + r2 Δφ2 ≈ 0', r1 * dphi1 + r2 * dphi2, 0, 1e-5);
+
+  var jPin = m8.joints[m8.joints.length - 1];
+  assert('lokální bod čepu uvnitř kotouče',
+    Math.hypot(jPin.sA[0], jPin.sA[1]) <= r1 + 1e-9);
+  var pa = M.Model.toGlobal(d1, jPin.sA);
+  var pb = M.Model.toGlobal(rod8, jPin.sB);
+  assert('čep tyče splynutý po běhu', Math.hypot(pa[0] - pb[0], pa[1] - pb[1]) < 1e-7);
+}
+
+// ------------------------------------------------------- 9. pružina
+console.log('\n[9] Pružina – kyvadlo a energie');
+{
+  var m9 = M.Examples.build('spring-pendulum');
+  m9.sim.h = 0.0005; m9.sim.recordEvery = 10;
+  var run9 = M.Simulation.runSync(m9);
+  assert('běh bez chyby', !run9.error, run9.error || '');
+  check('stupně volnosti', run9.dof.dof, 1, 0);
+  var viol9 = sig(run9, 'system/viol');
+  assert('vazby splněny', Math.max.apply(null, viol9.map(Math.abs)) < 1e-9);
+
+  // bez tlumení by se energie téměř zachovala – zde je c>0, energie klesá
+  var E9 = sig(run9, 'system/E');
+  assert('tlumení snižuje energii', E9[E9.length - 1] < E9[0] - 0.01,
+    'E0=' + E9[0].toFixed(3) + ' Eend=' + E9[E9.length - 1].toFixed(3));
+
+  // konzervativní případ: c=0, kontrola driftu energie
+  var m9b = M.Model.create();
+  var rod9 = M.Model.addRod(m9b, [0, 0], [0.4, 0], { lineDensity: 2 });
+  M.Model.addRevolute(m9b, 'ground', rod9.id, [0, 0]);
+  var tip9 = M.Model.toGlobal(rod9, [rod9.L / 2, 0]);
+  M.Model.addSpring(m9b, rod9.id, 'ground', tip9, [0.5, 0], { k: 50, c: 0, L0: 0.25 });
+  m9b.sim.tEnd = 2; m9b.sim.h = 0.0005; m9b.sim.recordEvery = 10;
+  var run9b = M.Simulation.runSync(m9b);
+  assert('pružina c=0: běh OK', !run9b.error, run9b.error || '');
+  var Eb = sig(run9b, 'system/E');
+  var e0b = Eb[0], emaxb = 0, spanb = 0;
+  for (i = 0; i < Eb.length; i++) {
+    emaxb = Math.max(emaxb, Math.abs(Eb[i] - e0b));
+    spanb = Math.max(spanb, Math.abs(Eb[i]));
+  }
+  assert('pružina c=0: drift energie < 0.5 %', emaxb / (spanb + 1e-9) < 5e-3,
+    '(' + (100 * emaxb / (spanb + 1e-9)).toFixed(3) + ' %)');
+}
+
+// ------------------------------------------ 10. tyč na kotouči + tlumič
+console.log('\n[10] Tyč na kotouči (1 DOF) a tlumič');
+{
+  var m10 = M.Model.create();
+  m10.gravity.enabled = true;
+  var disk10 = M.Model.addDisk(m10, [0, 0], { radius: 0.12, mass: 1 });
+  M.Model.addRevolute(m10, 'ground', disk10.id, [0, 0]);
+  var attach10 = [0.06, 0.04];
+  var rod10 = M.Model.addRod(m10, attach10, [0.35, 0.04], { lineDensity: 2 });
+  M.Model.addRevolute(m10, disk10.id, rod10.id, attach10);
+  // jediná rotační vazba disk–tyč ⇒ tyč se může otáčet (ne svar)
+  var run10p = M.Simulation.prepare(m10);
+  check('kotouč+tyč: pohyblivost', run10p.dof.mobility, 2, 0); // φ disku + φ tyče
+  check('kotouč+tyč: DOF', run10p.dof.dof, 2, 0);
+
+  var m10b = M.Model.create();
+  var rodD = M.Model.addRod(m10b, [0, 0], [0.4, 0]);
+  M.Model.addRevolute(m10b, 'ground', rodD.id, [0, 0]);
+  var tipD = M.Model.toGlobal(rodD, [rodD.L / 2, 0]);
+  M.Model.addDamper(m10b, rodD.id, 'ground', tipD, [0.5, 0], { c: 8 });
+  rodD.omega = 2;
+  m10b.sim.tEnd = 1.5; m10b.sim.h = 0.001; m10b.sim.recordEvery = 5;
+  var run10d = M.Simulation.runSync(m10b);
+  assert('tlumič: běh OK', !run10d.error, run10d.error || '');
+  var om = sig(run10d, rodD.id + '/omega');
+  assert('tlumič snižuje |ω|', Math.abs(om[om.length - 1]) < Math.abs(om[0]) * 0.9,
+    'ω0=' + om[0].toFixed(3) + ' ωend=' + om[om.length - 1].toFixed(3));
+}
+
+// -------------------------- 11. čep uprostřed tyče + sdílený čep 3 tyčí
+console.log('\n[11] Rotační vazba uprostřed tyče a sdílený čep');
+{
+  var m11 = M.Model.create();
+  m11.gravity.enabled = false;
+  var rA = M.Model.addRod(m11, [0, 0], [0.6, 0], { name: 'A' });
+  var rB = M.Model.addRod(m11, [0.3, 0], [0.3, 0.4], { name: 'B' });
+  // čep uprostřed A (x=0.3) a na konci B
+  var mid = [0.3, 0];
+  var jMid = M.Model.addRevolute(m11, rA.id, rB.id, mid);
+  assert('lokální bod A není konec', Math.abs(jMid.sA[0]) < rA.L / 2 - 0.05);
+  M.Model.addRevolute(m11, 'ground', rA.id, [0, 0]);
+  var run11 = M.Simulation.prepare(m11);
+  check('čep uprostřed: DOF', run11.dof.dof, 2, 0);
+  assert('sestavení OK', run11.assembly.converged);
+
+  var m11b = M.Model.create();
+  var t1 = M.Model.addRod(m11b, [-0.3, 0], [0, 0]);
+  var t2 = M.Model.addRod(m11b, [0, 0], [0.3, 0]);
+  var t3 = M.Model.addRod(m11b, [0, 0], [0, 0.3]);
+  var jShare = M.Model.addRevolute(m11b, t1.id, t2.id, [0, 0], {
+    bodies: [t1.id, t2.id, t3.id], name: 'Sdílený'
+  });
+  check('sdílený čep: 3 členové', M.Model.revoluteMembers(jShare).length, 3, 0);
+  M.Model.addRevolute(m11b, 'ground', t1.id, [-0.3, 0]);
+  var run11b = M.Simulation.prepare(m11b);
+  assert('sdílený čep: sestavení', run11b.assembly.converged);
+  // 3 tyče, ground-t1 (2), shared (4 = 2+2) → nq=9, nc=6, mobility=3
+  check('sdílený čep: počet vazbových rovnic', run11b.sys.nc, 6, 0);
+  M.System.scatter(run11b.sys, run11b.q, null);
+  M.System.evaluateConstraints(run11b.sys, 0);
+  assert('sdílený čep: zbytek malý', M.Dynamics.violation(run11b.sys) < 1e-10);
+}
+
 console.log('\n=== ' + pass + ' OK, ' + fail + ' FAIL ===');
 process.exit(fail ? 1 : 0);

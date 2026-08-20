@@ -103,13 +103,35 @@
       var A = bodies[ia], B = bodies[ib];
 
       if (joint.type === 'revolute') {
-        addGroup('joint', joint, ia, ib, [C.coincident(ia, joint.sA, ib, joint.sB)]);
+        var mem = Model.revoluteMembers(joint);
+        var i0 = index[mem[0].id];
+        if (i0 == null) {
+          warnings.push('Vazba "' + joint.name + '" odkazuje na neexistující těleso.');
+          continue;
+        }
+        var coinc = [];
+        var ibLast = ib;
+        var okMem = true;
+        for (var mi = 1; mi < mem.length; mi++) {
+          var im = index[mem[mi].id];
+          if (im == null) {
+            warnings.push('Vazba "' + joint.name + '" odkazuje na neexistující těleso.');
+            okMem = false;
+            break;
+          }
+          coinc.push(C.coincident(i0, mem[0].s, im, mem[mi].s));
+          ibLast = im;
+        }
+        if (!okMem || !coinc.length) continue;
+        addGroup('joint', joint, i0, ibLast, coinc);
         if (!skipDrivers && joint.driver && joint.driver.enabled) {
-          // Phi = phi_A - phi_B - f(t); záporné znaménko rychlosti zajistí, že
-          // kladná hodnota pohonu = otáčení tělesa B proti směru hod. ručiček.
-          addGroup('driver', joint, ia, ib, [
-            C.relAngle(ia, ib, driverFunc(joint.driver, A.phi - B.phi, -1))
-          ]);
+          var iDrvA = index[joint.bodyA], iDrvB = index[joint.bodyB];
+          if (iDrvA != null && iDrvB != null) {
+            var bodyDrvA = bodies[iDrvA], bodyDrvB = bodies[iDrvB];
+            addGroup('driver', joint, iDrvA, iDrvB, [
+              C.relAngle(iDrvA, iDrvB, driverFunc(joint.driver, bodyDrvA.phi - bodyDrvB.phi, -1))
+            ]);
+          }
         }
       } else if (joint.type === 'prismatic') {
         var ax = joint.axisA;
@@ -125,15 +147,66 @@
               driverFunc(joint.driver, currentSlide(A, B, joint), 1))
           ]);
         }
+      } else if (joint.type === 'rolling') {
+        if (A.type !== 'disk' || B.type !== 'disk') {
+          warnings.push('Valivá vazba "' + joint.name + '" vyžaduje dvě rotační tělesa.');
+          continue;
+        }
+        var side = joint.side === 'internal' ? 'internal' : 'external';
+        var rA = A.radius, rB = B.radius;
+        var R;
+        var sigB = 1, sigTh = 1;
+        if (side === 'internal') {
+          R = Math.abs(rA - rB);
+          if (R < 1e-9) {
+            warnings.push('Valivá vazba "' + joint.name + '": poloměry musí být různé (vnitřní kontakt).');
+            continue;
+          }
+          if (rA >= rB) { sigB = -1; sigTh = -1; }
+          else { sigB = 1; sigTh = 1; }
+        } else {
+          R = rA + rB;
+        }
+        var offset = joint.offset != null ? joint.offset : 0;
+        // pouze podmínka valení (1 rovnice) – vzdálenost středů musí zajistit jiná vazba
+        addGroup('joint', joint, ia, ib, [
+          C.rolling(ia, rA, ib, rB, R, sigB, sigTh, offset)
+        ]);
       } else {
         warnings.push('Neznámý typ vazby: ' + joint.type);
       }
     }
 
-    // zatížení
+    // zatížení (síly, momenty, pružiny)
     var loads = [];
     for (var li = 0; li < model.loads.length; li++) {
       var load = model.loads[li];
+      if (load.type === 'spring') {
+        var iaS = index[load.bodyA], ibS = index[load.bodyB];
+        if (iaS == null || ibS == null) {
+          warnings.push('Pružina "' + load.name + '" odkazuje na neexistující těleso.');
+          continue;
+        }
+        if (dofIndex[iaS] < 0 && dofIndex[ibS] < 0) {
+          warnings.push('Pružina "' + load.name + '" spojuje dvě části rámu - nemá vliv.');
+          continue;
+        }
+        loads.push({ load: load, bodyIndex: iaS, bodyBIndex: ibS });
+        continue;
+      }
+      if (load.type === 'damper') {
+        var iaD = index[load.bodyA], ibD = index[load.bodyB];
+        if (iaD == null || ibD == null) {
+          warnings.push('Tlumič "' + load.name + '" odkazuje na neexistující těleso.');
+          continue;
+        }
+        if (dofIndex[iaD] < 0 && dofIndex[ibD] < 0) {
+          warnings.push('Tlumič "' + load.name + '" spojuje dvě části rámu - nemá vliv.');
+          continue;
+        }
+        loads.push({ load: load, bodyIndex: iaD, bodyBIndex: ibD });
+        continue;
+      }
       var lb = index[load.body];
       if (lb == null || dofIndex[lb] < 0) {
         if (lb == null) warnings.push('Zatížení "' + load.name + '" odkazuje na neexistující těleso.');
@@ -292,6 +365,10 @@
     for (i = 0; i < sys.loads.length; i++) {
       var rec = sys.loads[i];
       var load = rec.load;
+      if (load.type === 'spring' || load.type === 'damper') {
+        applySpring(sys, load, rec.bodyIndex, rec.bodyBIndex, Q);
+        continue;
+      }
       k = sys.dofIndex[rec.bodyIndex];
       if (load.type === 'torque') {
         Q[k + 2] += Model.loadValue(load, t);
@@ -307,6 +384,45 @@
     }
     return Q;
   };
+
+  /** Síla pružiny/tlumiče na obě tělesa (včetně rámu = jen druhé těleso). */
+  function applySpring(sys, load, ia, ib, Q) {
+    var pa = sys.P[ia], pb = sys.P[ib];
+    var va = sys.V[ia], vb = sys.V[ib];
+    var sa = C.rot(pa[2], load.sA || [0, 0]);
+    var sb = C.rot(pb[2], load.sB || [0, 0]);
+    var ax = pa[0] + sa[0], ay = pa[1] + sa[1];
+    var bx = pb[0] + sb[0], by = pb[1] + sb[1];
+    var dx = bx - ax, dy = by - ay;
+    var L = Math.hypot(dx, dy);
+    if (L < 1e-12) return;
+    var nx = dx / L, ny = dy / L;
+    var sad = C.rotD(pa[2], load.sA || [0, 0]);
+    var sbd = C.rotD(pb[2], load.sB || [0, 0]);
+    var vax = va[0] + sad[0] * va[2], vay = va[1] + sad[1] * va[2];
+    var vbx = vb[0] + sbd[0] * vb[2], vby = vb[1] + sbd[1] * vb[2];
+    var Ldot = nx * (vbx - vax) + ny * (vby - vay);
+    var L0 = load.L0 != null ? load.L0 : L;
+    var kSpr = load.k != null ? load.k : 0;
+    var cSpr = load.c != null ? load.c : 0;
+    // F_A = (k(L−L0) + c L̇) n,  n = (r_B−r_A)/L
+    var mag = kSpr * (L - L0) + cSpr * Ldot;
+    var Fx = mag * nx, Fy = mag * ny;
+
+    var ka = sys.dofIndex[ia];
+    if (ka >= 0) {
+      Q[ka] += Fx;
+      Q[ka + 1] += Fy;
+      Q[ka + 2] += sa[0] * Fy - sa[1] * Fx;
+    }
+    var kb = sys.dofIndex[ib];
+    if (kb >= 0) {
+      Q[kb] -= Fx;
+      Q[kb + 1] -= Fy;
+      Q[kb + 2] -= sb[0] * Fy - sb[1] * Fx;
+    }
+  }
+  Sys.applySpring = applySpring;
 
   MBD.System = Sys;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

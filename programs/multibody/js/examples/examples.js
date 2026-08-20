@@ -137,6 +137,43 @@
         m.sim.tEnd = 4;
         return m;
       }
+    },
+    {
+      id: 'rolling-disks',
+      name: 'Valící se kotouče',
+      description: 'Dvě rotační tělesa s pevnými osami a valivou vazbou (1 DOF). Kotouč 1 je poháněn, ' +
+        'kotouč 2 se odvaluje.',
+      build: function () {
+        var m = Model.create('Valící se kotouče');
+        m.gravity.enabled = false;
+        var r1 = 0.15, r2 = 0.1;
+        var d1 = Model.addDisk(m, [0, 0], { name: 'Kotouč 1', radius: r1, mass: 2 });
+        var d2 = Model.addDisk(m, [r1 + r2, 0], { name: 'Kotouč 2', radius: r2, mass: 1 });
+        var pin = Model.addRevolute(m, 'ground', d1.id, [0, 0], { name: 'O1 – rám/kotouč 1' });
+        Model.addRevolute(m, 'ground', d2.id, [r1 + r2, 0], { name: 'O2 – rám/kotouč 2' });
+        Model.setDriver(pin, { enabled: true, kind: 'rate', rate: 4, expr: '2*t' });
+        Model.addRolling(m, d1.id, d2.id, { name: 'Valení 1/2', side: 'external' });
+        m.sim.tEnd = 2;
+        m.sim.h = 0.001;
+        return m;
+      }
+    },
+    {
+      id: 'spring-pendulum',
+      name: 'Kyvadlo na pružině',
+      description: 'Tyč otočně v rámu s pružinou ke kotvě – ukázka pružiny a tlumení.',
+      build: function () {
+        var m = Model.create('Kyvadlo na pružině');
+        var rod = Model.addRod(m, [0, 0], [0.5, -0.1], { name: 'Rameno', lineDensity: 2 });
+        Model.addRevolute(m, 'ground', rod.id, [0, 0], { name: 'A – rám/rameno' });
+        var tip = Model.toGlobal(rod, [rod.L / 2, 0]);
+        Model.addSpring(m, rod.id, 'ground', tip, [0.55, 0], {
+          name: 'Pružina', k: 80, c: 1.5, L0: 0.35
+        });
+        m.sim.tEnd = 4;
+        m.sim.h = 0.001;
+        return m;
+      }
     }
   ];
 
