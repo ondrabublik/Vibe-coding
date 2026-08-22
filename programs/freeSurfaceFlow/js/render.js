@@ -362,21 +362,22 @@ class Renderer {
     const { ctx, scale } = this;
 
     ctx.save();
-    ctx.globalAlpha = 0.45;
+
+    // Draw fluid first so obstacles always stay on top.
+    if (fluids) {
+      ctx.globalAlpha = 0.45;
+      ctx.fillStyle = '#22d3ee';
+      for (const key of fluids) {
+        if (solids && solids.has(key)) continue;
+        const [i, j] = key.split(',').map(Number);
+        ctx.fillRect(i * scale, j * scale, scale, scale);
+      }
+    }
 
     if (solids) {
       ctx.globalAlpha = 0.7;
       ctx.fillStyle = '#94a3b8';
       for (const key of solids) {
-        const [i, j] = key.split(',').map(Number);
-        ctx.fillRect(i * scale, j * scale, scale, scale);
-      }
-      ctx.globalAlpha = 0.45;
-    }
-
-    if (fluids) {
-      ctx.fillStyle = '#22d3ee';
-      for (const key of fluids) {
         const [i, j] = key.split(',').map(Number);
         ctx.fillRect(i * scale, j * scale, scale, scale);
       }

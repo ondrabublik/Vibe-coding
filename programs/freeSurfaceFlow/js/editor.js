@@ -37,7 +37,8 @@ class DrawEditor {
           this.fluids.delete(key);
           this.solids.add(key);
         } else if (this.mode === 'fluid') {
-          this.solids.delete(key);
+          // Fluid must not overwrite existing obstacles.
+          if (this.solids.has(key)) continue;
           this.fluids.add(key);
         } else if (this.mode === 'erase') {
           this.solids.delete(key);
