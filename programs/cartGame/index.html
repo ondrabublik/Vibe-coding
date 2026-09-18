@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Dobřany Kart</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="loading">
+      <div class="logo">DOBŘANY <span>KART</span></div>
+      <p id="loadingText">Stavím Tichou ulici…</p>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="itemSlot"><div id="itemIcon"></div></div>
+      <div id="lapBox">
+        <div class="label">KOLO</div>
+        <div id="lap">1/3</div>
+      </div>
+      <div id="timeBox">
+        <div id="time">0:00.000</div>
+        <div id="lapTimes"></div>
+      </div>
+      <div id="street"></div>
+      <div id="standings"></div>
+      <canvas id="minimap" width="220" height="220"></canvas>
+      <div id="position">6<sup>.</sup></div>
+      <div id="speed"><span id="speedVal">0</span> km/h</div>
+      <div id="centerMsg"></div>
+      <div id="wrongWay" class="hidden">⟲ OPAČNÝ SMĚR!</div>
+    </div>
+
+    <!-- touch controls -->
+    <div id="touch" class="hidden">
+      <div class="tleft">
+        <button data-k="left">◀</button>
+        <button data-k="right">▶</button>
+      </div>
+      <div class="tright">
+        <button data-k="item">🎁</button>
+        <button data-k="drift">DRIFT</button>
+        <button data-k="brake">▼</button>
+        <button data-k="gas" class="gas">▲</button>
+      </div>
+    </div>
+
+    <!-- title / menu -->
+    <div id="menu" class="screen hidden">
+      <div class="panel">
+        <div class="logo">DOBŘANY <span>KART</span></div>
+        <p class="sub">Velká cena Tiché ulice · Tichá → Chlumčanská → U Lomy → Oty Kovala</p>
+        <div class="row">
+          <div class="label">Barva motokáry</div>
+          <div id="colors" class="colors"></div>
+        </div>
+        <div class="row">
+          <div class="label">Obtížnost</div>
+          <div class="seg" id="difficulty">
+            <button data-v="0">Pohodová</button>
+            <button data-v="1">Závodní</button>
+            <button data-v="2">Šílená</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Počet kol</div>
+          <div class="seg" id="laps">
+            <button data-v="2">2</button>
+            <button data-v="3">3</button>
+            <button data-v="5">5</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Grafika</div>
+          <div class="seg" id="quality">
+            <button data-v="0">Nízká</button>
+            <button data-v="1">Střední</button>
+            <button data-v="2">Vysoká</button>
+          </div>
+        </div>
+        <button id="startBtn" class="big">START ▶</button>
+        <div class="controls">
+          <div><b>↑ / W</b> plyn</div>
+          <div><b>↓ / S</b> brzda, couvání</div>
+          <div><b>← → / A D</b> zatáčení</div>
+          <div><b>Mezerník / Shift</b> drift (drž + zatáčej → mini-turbo)</div>
+          <div><b>E / Ctrl</b> použít předmět</div>
+          <div><b>C</b> kamera · <b>R</b> zpět na trať · <b>M</b> zvuk · <b>Esc</b> pauza</div>
+        </div>
+        <p class="credits">Mapová data © přispěvatelé OpenStreetMap (ODbL) · výškopis Copernicus DEM přes Open-Meteo.
+          Vzhled domů a ulic podle snímků ze Street View (Tichá a Chlumčanská, Dobřany).</p>
+      </div>
+    </div>
+
+    <div id="pause" class="screen dim hidden">
+      <div class="panel small">
+        <h2>PAUZA</h2>
+        <button id="resumeBtn" class="big">Pokračovat</button>
+        <button id="restartBtn">Restart závodu</button>
+        <button id="menuBtn">Hlavní menu</button>
+      </div>
+    </div>
+
+    <div id="results" class="screen dim hidden">
+      <div class="panel">
+        <h2 id="resultTitle">CÍL!</h2>
+        <table id="resultTable"></table>
+        <div class="btns">
+          <button id="againBtn" class="big">Znovu</button>
+          <button id="menuBtn2">Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./js/main.js"></script>
+  </body>
+</html>
