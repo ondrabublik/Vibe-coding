@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Syntéza mechanismu</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <header>
+      <h1>Syntéza mechanismu</h1>
+      <p class="sub">Nakreslete uzavřenou NURBS křivku a nechte vygenerovat mechanismus, který ji kreslí.</p>
+    </header>
+
+    <section>
+      <h2><span class="num">1</span> Křivka</h2>
+      <div class="row">
+        <select id="preset" autocomplete="off" title="Předloha">
+          <option value="">— předloha —</option>
+          <option value="heart">Srdce</option>
+          <option value="egg">Vejce</option>
+          <option value="bean">Ledvina</option>
+          <option value="dshape">Písmeno D</option>
+          <option value="drop">Kapka</option>
+          <option value="star">Hvězda</option>
+          <option value="eight">Osmička</option>
+        </select>
+        <button id="btnClear" title="Začít novou křivku">Nová</button>
+      </div>
+      <div class="row">
+        <label for="degree">Stupeň</label>
+        <select id="degree" autocomplete="off">
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+        </select>
+        <span class="muted" id="ptCount"></span>
+      </div>
+      <div class="row" id="weightRow">
+        <label for="weight">Váha bodu</label>
+        <input type="range" id="weight" min="-1" max="1" step="0.01" value="0" />
+        <span id="weightVal" class="val">–</span>
+      </div>
+      <div class="row">
+        <button id="btnExport">Export JSON</button>
+        <button id="btnImport">Import JSON</button>
+        <input type="file" id="fileImport" accept=".json,application/json" hidden />
+      </div>
+      <details class="help">
+        <summary>Ovládání editoru</summary>
+        <ul>
+          <li><b>Klik</b> do prázdna – přidá řídicí bod</li>
+          <li><b>Tažení</b> bodu – posun</li>
+          <li><b>Pravé tlačítko</b> / <b>Delete</b> – smazání bodu</li>
+          <li><b>Shift + kolečko</b> – váha vybraného bodu</li>
+          <li><b>Kolečko</b> – zoom, <b>prostřední tlačítko</b> nebo <b>mezerník + tažení</b> – posun pohledu</li>
+        </ul>
+      </details>
+    </section>
+
+    <section>
+      <h2><span class="num">2</span> Mechanismus</h2>
+      <div class="row">
+        <label for="maxLevel">Složitost</label>
+        <select id="maxLevel" autocomplete="off" class="grow">
+          <option value="8" selected>až osmičlen (nejvěrnější)</option>
+          <option value="6">až šestičlen</option>
+          <option value="4">jen čtyřčlen</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="budget">Hledání</label>
+        <select id="budget" autocomplete="off" class="grow">
+          <option value="8000">Rychlé (8 s)</option>
+          <option value="20000" selected>Normální (20 s)</option>
+          <option value="45000">Důkladné (45 s)</option>
+        </select>
+      </div>
+      <p class="note">Jen tuhé členy a rotační klouby. Začíná se čtyřčlenem, ke kterému se postupně
+        přidávají dvojčleny (šestičlen, osmičlen). Rozměry i to, kam se dvojčleny připojí, hledá optimalizace.</p>
+      <button id="btnSolve" class="primary">Solve ▶</button>
+      <div class="progress" id="progress" hidden><div id="progBar"></div></div>
+      <div id="progText" class="muted small"></div>
+    </section>
+
+    <section>
+      <h2><span class="num">3</span> Animace</h2>
+      <div class="row">
+        <button id="btnPlay" class="grow">⏸ Pauza</button>
+        <button id="btnFit" title="Přizpůsobit pohled">⤢ Pohled</button>
+      </div>
+      <div class="row">
+        <label for="speed">Rychlost</label>
+        <input type="range" id="speed" min="0.02" max="1" step="0.01" value="0.2" />
+        <span id="speedVal" class="val">0.20 ot/s</span>
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" id="showTrail" checked /> Stopa pera</label>
+        <label><input type="checkbox" id="showTraced" /> Celá vykreslená křivka</label>
+        <label><input type="checkbox" id="showTarget" checked /> Zadaná křivka</label>
+        <label><input type="checkbox" id="showDeco" checked /> Rám a motor</label>
+        <label><input type="checkbox" id="showPaths" /> Dráhy kloubů</label>
+        <label><input type="checkbox" id="showLabels" /> Popisky kloubů</label>
+      </div>
+    </section>
+
+    <section id="resultSec" hidden>
+      <h2>Výsledek</h2>
+      <div id="result"></div>
+    </section>
+  </aside>
+
+  <main id="stage">
+    <canvas id="cv"></canvas>
+    <div class="tabs">
+      <button id="tabEdit" class="tab active">Editor</button>
+      <button id="tabSim" class="tab" disabled>Mechanismus</button>
+    </div>
+    <div id="hud"></div>
+    <div id="hint"></div>
+  </main>
+</div>
+
+<script src="js/geom.js"></script>
+<script src="js/nurbs.js"></script>
+<script src="js/linkage.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
