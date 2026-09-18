@@ -1,0 +1,60 @@
+(function (NS) {
+  'use strict';
+
+  NS.Defaults = {
+    common: {
+      substeps: 3,
+      speed: 1,
+      paused: false,
+      showBounds: true,
+      showGrid: false,
+      particleRadius: 0.45,
+    },
+
+    solid: {
+      gravity: [0, -9.81],
+      h: 0.03,
+      spacing: 0.03,
+      rho0: 1000,
+      bulkModulus: 3.0e4,
+      shearModulus: 1.2e4,
+      yieldStress: 3.0e2,
+      artificialViscosity: 0.8,
+      tensileAlpha: 0.15,
+      densityDiffusion: 0.12,
+      cfl: 0.18,
+      dt: 5.0e-5,
+      innerRadius: 0.2,
+      outerRadius: 0.38,
+      ringCenter: [0.5, 0.95],
+      floorY: 0.1,
+      floorWidth: 1.6,
+      floorLayers: 5,
+      domain: { xMin: 0.05, xMax: 0.95, yMin: 0.08, yMax: 1.15 },
+    },
+
+    fluid: {
+      gravity: [0, -9.81],
+      h: 0.022,
+      spacing: 0.022,
+      rho0: 1000,
+      gamma: 7,
+      speedOfSound: 10,
+      artificialViscosityAlpha: 0.25,
+      artificialViscosityBeta: 0.05,
+      densityDiffusion: 0.15,
+      xsph: 0.5,
+      cfl: 0.18,
+      dt: 4.0e-5,
+      columnX: 0.1,
+      columnY: 0.1,
+      columnWidth: 0.3,
+      columnHeight: 0.5,
+      tankWidth: 1.0,
+      tankHeight: 0.62,
+      tankOrigin: [0.06, 0.06],
+      boundaryLayers: 4,
+      domain: { xMin: 0.04, xMax: 1.12, yMin: 0.04, yMax: 0.72 },
+    },
+  };
+})(window.SPH);

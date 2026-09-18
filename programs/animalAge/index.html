@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Věk zvířete → věk člověka</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f4f6f9;
+      --sidebar: #1e293b;
+      --sidebar-hover: #334155;
+      --sidebar-active: #3b82f6;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #3b82f6;
+      --accent-light: #eff6ff;
+      --result-bg: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: var(--sidebar);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .sidebar-header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .sidebar-header p {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    .animal-tabs {
+      list-style: none;
+      padding: 12px 0;
+      flex: 1;
+    }
+
+    .animal-tab {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      cursor: pointer;
+      color: #cbd5e1;
+      font-size: 0.95rem;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+      border-left: 3px solid transparent;
+    }
+
+    .animal-tab:hover {
+      background: var(--sidebar-hover);
+      color: #f1f5f9;
+    }
+
+    .animal-tab.active {
+      background: rgba(59, 130, 246, 0.15);
+      color: #fff;
+      border-left-color: var(--sidebar-active);
+    }
+
+    .animal-tab .icon {
+      font-size: 1.4rem;
+      line-height: 1;
+    }
+
+    /* Main content */
+    .main {
+      flex: 1;
+      padding: 32px 40px;
+      overflow-y: auto;
+    }
+
+    .main-header {
+      margin-bottom: 28px;
+    }
+
+    .main-header h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .main-header p {
+      color: var(--text-muted);
+      margin-top: 6px;
+      font-size: 0.95rem;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px;
+      margin-bottom: 24px;
+      border: 1px solid var(--border);
+    }
+
+    .card-title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .form-row {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+
+    .form-row:last-child { margin-bottom: 0; }
+
+    label {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    select, input[type="number"] {
+      padding: 10px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.95rem;
+      color: var(--text);
+      background: #fff;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      width: 100%;
+      max-width: 360px;
+    }
+
+    select:focus, input[type="number"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+
+    .input-hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Result */
+    .result-card {
+      background: var(--result-bg);
+      border-radius: var(--radius);
+      padding: 32px;
+      color: #fff;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(59, 130, 246, 0.35);
+    }
+
+    .result-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      opacity: 0.85;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+
+    .result-value {
+      font-size: 3.5rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .result-unit {
+      font-size: 1.5rem;
+      font-weight: 400;
+      opacity: 0.9;
+    }
+
+    .result-detail {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+
+    .result-placeholder {
+      opacity: 0.6;
+      font-size: 1.1rem;
+      font-weight: 500;
+    }
+
+    /* Breed info */
+    .breed-info {
+      margin-top: 12px;
+      padding: 12px 16px;
+      background: var(--accent-light);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #1d4ed8;
+      max-width: 480px;
+    }
+
+    @media (max-width: 640px) {
+      .app { flex-direction: column; }
+      .sidebar { width: 100%; flex-direction: row; overflow-x: auto; }
+      .sidebar-header { display: none; }
+      .animal-tabs { display: flex; padding: 0; }
+      .animal-tab { padding: 12px 16px; white-space: nowrap; border-left: none; border-bottom: 3px solid transparent; }
+      .animal-tab.active { border-left: none; border-bottom-color: var(--sidebar-active); }
+      .main { padding: 20px 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>Zvířata</h1>
+        <p>Vyberte druh</p>
+      </div>
+      <ul class="animal-tabs" id="animalTabs"></ul>
+    </aside>
+
+    <main class="main">
+      <div class="main-header">
+        <h2 id="animalTitle">—</h2>
+        <p id="animalDescription">Vyberte zvíře v levém menu.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Nastavení</div>
+
+        <div class="form-row">
+          <label for="breedSelect">Rasa / typ</label>
+          <select id="breedSelect"></select>
+          <div class="breed-info" id="breedInfo"></div>
+        </div>
+
+        <div class="form-row">
+          <label for="animalAge">Věk zvířete (roky)</label>
+          <input type="number" id="animalAge" min="0" max="30" step="0.5" placeholder="např. 3">
+          <span class="input-hint">Zadejte věk v letech (desetinná místa povolena, např. 2,5)</span>
+        </div>
+      </div>
+
+      <div class="result-card" id="resultCard">
+        <div class="result-label">Věk v lidských letech</div>
+        <div class="result-value result-placeholder" id="resultValue">—</div>
+        <div class="result-detail" id="resultDetail"></div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const animals = {
+      dog: {
+        name: 'Pes',
+        icon: '🐕',
+        description: 'Přepočet věku psa na lidský věk podle velikosti plemene.',
+        breeds: [
+          { id: 'small', name: 'Malý pes', info: 'Do 10 kg — např. čivava, jorkšírský teriér, maltézský psík', size: 'small' },
+          { id: 'medium', name: 'Střední pes', info: '10–25 kg — např. beagle, border kolie, buldok', size: 'medium' },
+          { id: 'large', name: 'Velký pes', info: 'Nad 25 kg — např. labrador, německý ovčák, bernardýn', size: 'large' },
+        ],
+        convert(age, breed) {
+          if (age <= 0) return 0;
+          if (age <= 1) return Math.round(age * 15);
+          if (age <= 2) return Math.round(15 + (age - 1) * 9);
+          const perYear = { small: 4, medium: 5, large: 6 }[breed.size];
+          return Math.round(24 + (age - 2) * perYear);
+        },
+      },
+      rabbit: {
+        name: 'Králík',
+        icon: '🐇',
+        description: 'Přepočet věku králíka na lidský věk.',
+        breeds: [
+          { id: 'dwarf', name: 'Trpasličí králík', info: 'Do 1,5 kg — např. nizozemský trpasličí, anglický trpasličí', size: 'dwarf' },
+          { id: 'medium', name: 'Střední králík', info: '1,5–5 kg — např. rex, angorský králík', size: 'medium' },
+          { id: 'giant', name: 'Obří králík', info: 'Nad 5 kg — např. německý obří, flanderský obří', size: 'giant' },
+        ],
+        convert(age, breed) {
+          if (age <= 0) return 0;
+          if (age <= 1) return Math.round(age * 21);
+          const perYear = { dwarf: 5, medium: 5, giant: 6 }[breed.size];
+          return Math.round(21 + (age - 1) * perYear);
+        },
+      },
+      hamster: {
+        name: 'Křeček',
+        icon: '🐹',
+        description: 'Přepočet věku křečka na lidský věk.',
+        breeds: [
+          { id: 'syrian', name: 'Syrský křeček', info: 'Největší druh, žije 2–3 roky', size: 'syrian' },
+          { id: 'dwarf', name: 'Trpasličí křeček', info: 'Roborovský, campbellův, džungarský — žije 1,5–2 roky', size: 'dwarf' },
+          { id: 'chinese', name: 'Čínský křeček', info: 'Střední velikost, žije 2–3 roky', size: 'chinese' },
+        ],
+        convert(age, breed) {
+          if (age <= 0) return 0;
+          const perYear = { syrian: 32, dwarf: 40, chinese: 34 }[breed.size];
+          return Math.round(40 + perYear * (age - 1));
+        },
+      },
+    };
+
+    let currentAnimal = 'dog';
+
+    const animalTabsEl = document.getElementById('animalTabs');
+    const animalTitleEl = document.getElementById('animalTitle');
+    const animalDescriptionEl = document.getElementById('animalDescription');
+    const breedSelectEl = document.getElementById('breedSelect');
+    const breedInfoEl = document.getElementById('breedInfo');
+    const animalAgeEl = document.getElementById('animalAge');
+    const resultValueEl = document.getElementById('resultValue');
+    const resultDetailEl = document.getElementById('resultDetail');
+
+    function renderAnimalTabs() {
+      animalTabsEl.innerHTML = Object.entries(animals).map(([id, animal]) => `
+        <li class="animal-tab${id === currentAnimal ? ' active' : ''}" data-animal="${id}">
+          <span class="icon">${animal.icon}</span>
+          ${animal.name}
+        </li>
+      `).join('');
+
+      animalTabsEl.querySelectorAll('.animal-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          currentAnimal = tab.dataset.animal;
+          animalAgeEl.value = '';
+          renderAnimalTabs();
+          renderContent();
+        });
+      });
+    }
+
+    function renderContent() {
+      const animal = animals[currentAnimal];
+
+      animalTitleEl.textContent = `${animal.icon} ${animal.name}`;
+      animalDescriptionEl.textContent = animal.description;
+
+      breedSelectEl.innerHTML = animal.breeds.map(b =>
+        `<option value="${b.id}">${b.name}</option>`
+      ).join('');
+
+      updateBreedInfo();
+      updateResult();
+    }
+
+    function updateBreedInfo() {
+      const animal = animals[currentAnimal];
+      const breed = animal.breeds.find(b => b.id === breedSelectEl.value);
+      breedInfoEl.textContent = breed ? breed.info : '';
+    }
+
+    function formatYears(n) {
+      if (n === 1) return '1 rok';
+      if (n >= 2 && n <= 4) return `${n} roky`;
+      return `${n} let`;
+    }
+
+    function updateResult() {
+      const animal = animals[currentAnimal];
+      const age = parseFloat(animalAgeEl.value);
+      const breed = animal.breeds.find(b => b.id === breedSelectEl.value);
+
+      if (!breed || isNaN(age) || age < 0) {
+        resultValueEl.innerHTML = '<span class="result-placeholder">—</span>';
+        resultValueEl.classList.add('result-placeholder');
+        resultDetailEl.textContent = 'Zadejte věk zvířete pro zobrazení výsledku.';
+        return;
+      }
+
+      const humanAge = animal.convert(age, breed);
+      resultValueEl.classList.remove('result-placeholder');
+      resultValueEl.innerHTML = `${humanAge}<span class="result-unit"> let</span>`;
+      resultDetailEl.textContent =
+        `${animal.name} (${breed.name}), ${formatYears(Math.round(age * 10) / 10)} → ${formatYears(humanAge)} v lidském měřítku`;
+    }
+
+    breedSelectEl.addEventListener('change', () => {
+      updateBreedInfo();
+      updateResult();
+    });
+
+    animalAgeEl.addEventListener('input', updateResult);
+
+    renderAnimalTabs();
+    renderContent();
+  </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Golden Axe – Remake</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@900&family=Press+Start+2P&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="ui">
+      <div id="hud" class="hidden">
+        <div class="hud-player">
+          <div class="hud-name" id="hudName"></div>
+          <div class="hud-hp" id="hudHp"></div>
+          <div class="hud-magic" id="hudMagic"></div>
+        </div>
+        <div class="hud-right">
+          <div>SCORE <span id="hudScore">000000</span></div>
+          <div>LIVES <span id="hudLives">3</span></div>
+        </div>
+        <div id="bossBar" class="hidden">
+          <div class="boss-name" id="bossName"></div>
+          <div class="boss-track"><div class="boss-fill" id="bossFill"></div></div>
+        </div>
+      </div>
+
+      <div id="message" class="hidden"></div>
+      <div id="flash"></div>
+
+      <div id="screenTitle" class="screen hidden">
+        <h1 class="logo">GOLDEN AXE</h1>
+        <p class="sub">lightweight remake</p>
+        <p class="blink">PRESS ENTER</p>
+        <div class="controls">
+          <div><b>←↑↓→ / WASD</b> pohyb</div>
+          <div><b>2× ← / →</b> běh</div>
+          <div><b>J</b> útok</div>
+          <div><b>K / mezerník</b> skok</div>
+          <div><b>L</b> magie</div>
+          <div><b>Esc</b> pauza</div>
+        </div>
+      </div>
+
+      <div id="screenSelect" class="screen hidden">
+        <h2>CHOOSE YOUR WARRIOR</h2>
+        <div id="cards" class="cards"></div>
+        <p class="hint">← → výběr · ENTER potvrdit · ESC zpět</p>
+      </div>
+
+      <div id="screenPause" class="screen dim hidden">
+        <h2>PAUZA</h2>
+        <p class="hint">ENTER / ESC pokračovat</p>
+      </div>
+
+      <div id="screenGameOver" class="screen dim hidden">
+        <h2>GAME OVER</h2>
+        <p>CONTINUE? <span id="continueCount">9</span></p>
+        <p class="blink">PRESS ENTER</p>
+      </div>
+
+      <div id="screenClear" class="screen dim hidden">
+        <h2>STAGE CLEAR</h2>
+        <div id="clearStats" class="clear-stats"></div>
+        <p class="hint">Další levely přibudou později.</p>
+        <p class="blink">PRESS ENTER</p>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

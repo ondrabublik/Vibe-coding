@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPH simulace · 2D</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <header class="panel-header">
+        <h1>SPH simulace</h1>
+        <p class="subtitle">Smoothed Particle Hydrodynamics · 2D</p>
+      </header>
+
+      <section class="section">
+        <h2>Úloha</h2>
+        <select id="sceneSelect" aria-label="Výběr úlohy">
+          <option value="ring">Pevný prstenec</option>
+          <option value="damBreak">Dam break (tekutina)</option>
+        </select>
+        <p class="hint" id="sceneHint">
+          Prstenec z SPH částic padá v gravitačním poli na podložku a plasticky se deformuje.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Simulace</h2>
+        <label class="slider">
+          <span>Rychlost <em id="speedVal">1</em>×</span>
+          <input type="range" id="speed" min="0.25" max="4" step="0.25" value="1" />
+        </label>
+        <label class="slider">
+          <span>Kroky / snímek <em id="substepsVal">2</em></span>
+          <input type="range" id="substeps" min="1" max="8" step="1" value="2" />
+        </label>
+        <div class="btn-row">
+          <button type="button" id="btnPlayPause" class="btn primary">Pauza</button>
+          <button type="button" id="btnStep" class="btn">Krok</button>
+          <button type="button" id="btnReset" class="btn">Reset</button>
+        </div>
+      </section>
+
+      <section class="section" id="solidParams">
+        <h2>Parametry · pevná látka</h2>
+        <label class="slider">
+          <span>Rozteč částic <em id="solidSpacingVal">0.03</em></span>
+          <input type="range" id="solidSpacing" min="0.022" max="0.04" step="0.002" value="0.03" />
+        </label>
+        <label class="slider">
+          <span>Vnitřní poloměr <em id="solidInnerRVal">0.20</em></span>
+          <input type="range" id="solidInnerR" min="0.12" max="0.28" step="0.01" value="0.20" />
+        </label>
+        <label class="slider">
+          <span>Vnější poloměr <em id="solidOuterRVal">0.38</em></span>
+          <input type="range" id="solidOuterR" min="0.28" max="0.48" step="0.01" value="0.38" />
+        </label>
+        <label class="slider">
+          <span>Bulk modulus <em id="solidBulkVal">30</em> kPa</span>
+          <input type="range" id="solidBulk" min="10" max="120" step="5" value="30" />
+        </label>
+        <label class="slider">
+          <span>Shear modulus <em id="solidShearVal">12</em> kPa</span>
+          <input type="range" id="solidShear" min="5" max="60" step="1" value="12" />
+        </label>
+        <label class="slider">
+          <span>Mez kluzu <em id="solidYieldVal">3</em> kPa</span>
+          <input type="range" id="solidYield" min="1" max="15" step="1" value="3" />
+        </label>
+        <label class="slider">
+          <span>Gravitace <em id="solidGravityVal">9.81</em> m/s²</span>
+          <input type="range" id="solidGravity" min="1" max="20" step="0.1" value="9.81" />
+        </label>
+        <label class="slider">
+          <span>Časový krok <em id="solidDtVal">5.0e-5</em></span>
+          <input type="range" id="solidDt" min="0.00002" max="0.00012" step="0.00001" value="0.00005" />
+        </label>
+        <p class="hint">Barva = von Mises napětí. Šedé částice = pevná podložka.</p>
+      </section>
+
+      <section class="section" id="fluidParams" hidden>
+        <h2>Parametry · tekutina</h2>
+        <label class="slider">
+          <span>Rozteč částic <em id="fluidSpacingVal">0.022</em></span>
+          <input type="range" id="fluidSpacing" min="0.015" max="0.035" step="0.001" value="0.022" />
+        </label>
+        <label class="slider">
+          <span>Šířka sloupce <em id="fluidColumnWVal">0.30</em></span>
+          <input type="range" id="fluidColumnW" min="0.18" max="0.45" step="0.01" value="0.30" />
+        </label>
+        <label class="slider">
+          <span>Výška sloupce <em id="fluidColumnHVal">0.50</em></span>
+          <input type="range" id="fluidColumnH" min="0.25" max="0.6" step="0.01" value="0.50" />
+        </label>
+        <label class="slider">
+          <span>Rychlost zvuku <em id="fluidSoundVal">10</em> m/s</span>
+          <input type="range" id="fluidSound" min="6" max="24" step="1" value="10" />
+        </label>
+        <label class="slider">
+          <span>Umělá viskozita α <em id="fluidViscAlphaVal">0.25</em></span>
+          <input type="range" id="fluidViscAlpha" min="0.05" max="0.5" step="0.01" value="0.25" />
+        </label>
+        <label class="slider">
+          <span>Gravitace <em id="fluidGravityVal">9.81</em> m/s²</span>
+          <input type="range" id="fluidGravity" min="1" max="20" step="0.1" value="9.81" />
+        </label>
+        <label class="slider">
+          <span>Časový krok <em id="fluidDtVal">4.0e-5</em></span>
+          <input type="range" id="fluidDt" min="0.00002" max="0.00015" step="0.00001" value="0.00004" />
+        </label>
+        <p class="hint">Barva = velikost rychlosti. WCSPH + Taitova rovnice stavu.</p>
+      </section>
+
+      <section class="section">
+        <h2>Zobrazení</h2>
+        <label class="check">
+          <input type="checkbox" id="showBounds" checked />
+          <span>Ohraničení domény</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="showGrid" />
+          <span>Mřížka</span>
+        </label>
+      </section>
+    </aside>
+
+    <main class="viewport">
+      <canvas id="simCanvas" aria-label="SPH vizualizace"></canvas>
+    </main>
+  </div>
+
+  <script src="js/namespace.js"></script>
+  <script src="js/config/defaults.js"></script>
+  <script src="js/core/math.js"></script>
+  <script src="js/core/kernel.js"></script>
+  <script src="js/core/particles.js"></script>
+  <script src="js/core/neighbors.js"></script>
+  <script src="js/core/integrator.js"></script>
+  <script src="js/core/mass.js"></script>
+  <script src="js/core/density.js"></script>
+  <script src="js/solvers/solid.js"></script>
+  <script src="js/solvers/fluid.js"></script>
+  <script src="js/scenes/ring.js"></script>
+  <script src="js/scenes/damBreak.js"></script>
+  <script src="js/render/canvasRenderer.js"></script>
+  <script src="js/ui/controls.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "multibody-tests",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Testovací závislosti (nejsou potřeba pro běh aplikace v prohlížeči).",
+  "devDependencies": {
+    "jsdom": "^26.0.0"
+  },
+  "dependencies": {
+    "canvas": "^3.2.3"
+  }
+}

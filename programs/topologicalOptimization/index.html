@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2D Topologická optimalizace</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="panel">
+      <header class="brand">
+        <h1>TopoOpt 2D</h1>
+        <p>Topologická optimalizace ve prohlížeči</p>
+      </header>
+
+      <section class="section">
+        <h2>Příklad</h2>
+        <label class="field">
+          <span>Ukázková úloha</span>
+          <select id="presetSelect">
+            <option value="cantilever">Konzole</option>
+            <option value="mbb">MBB nosník</option>
+            <option value="corner">Rohový úchyt</option>
+            <option value="twoload">Dvě síly</option>
+            <option value="custom">Vlastní</option>
+          </select>
+        </label>
+        <p class="hint" id="presetHint">
+          Levá stěna uchycená, svislá síla uprostřed pravé hrany.
+        </p>
+      </section>
+
+      <section class="section">
+        <h2>Režim</h2>
+        <div class="mode-grid" role="group" aria-label="Režim kreslení">
+          <button type="button" class="mode-btn active" data-mode="support">
+            Uchycení
+          </button>
+          <button type="button" class="mode-btn" data-mode="force">
+            Síla
+          </button>
+          <button type="button" class="mode-btn" data-mode="erase">
+            Mazání
+          </button>
+        </div>
+        <p class="hint" id="modeHint">
+          Klikněte na hranu čtverce a přidejte uchycení (pevný bod).
+        </p>
+      </section>
+
+      <section class="section" id="forceSection">
+        <h2>Parametry síly</h2>
+        <label class="field">
+          <span>Velikost</span>
+          <input type="number" id="forceMag" value="1" min="0.01" step="0.1" />
+        </label>
+        <label class="field">
+          <span>Směr (°)</span>
+          <input type="number" id="forceAngle" value="270" step="1" />
+        </label>
+        <p class="hint">0° = doprava, 90° = nahoru, 270° = dolů.</p>
+      </section>
+
+      <section class="section">
+        <h2>Optimalizace</h2>
+        <label class="field">
+          <span>Podíl materiálu <strong id="volFracVal">0.40</strong></span>
+          <input type="range" id="volFrac" min="0.10" max="0.70" step="0.01" value="0.40" />
+        </label>
+        <label class="field">
+          <span>Rozlišení mřížky <strong id="meshVal">40</strong></span>
+          <input type="range" id="meshSize" min="20" max="60" step="2" value="40" />
+        </label>
+        <label class="field">
+          <span>Max. iterací <strong id="iterVal">80</strong></span>
+          <input type="range" id="maxIter" min="20" max="150" step="5" value="80" />
+        </label>
+        <label class="field">
+          <span>Filtr (r<sub>min</sub>) <strong id="rminVal">1.5</strong></span>
+          <input type="range" id="rmin" min="1.0" max="3.0" step="0.1" value="1.5" />
+        </label>
+      </section>
+
+      <section class="section actions">
+        <button type="button" class="btn primary" id="btnOptimize">Optimalizovat</button>
+        <button type="button" class="btn" id="btnStop" disabled>Zastavit</button>
+        <button type="button" class="btn" id="btnReset">Resetovat</button>
+      </section>
+
+      <section class="section stats">
+        <div class="stat"><span>Iterace</span><strong id="statIter">—</strong></div>
+        <div class="stat"><span>Poddajnost</span><strong id="statComp">—</strong></div>
+        <div class="stat"><span>Objem</span><strong id="statVol">—</strong></div>
+        <div class="stat"><span>Stav</span><strong id="statStatus">Připraveno</strong></div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <div class="canvas-wrap">
+        <canvas id="canvas" width="720" height="720" aria-label="Návrhová oblast"></canvas>
+        <div class="legend">
+          <span class="leg solid">Materiál</span>
+          <span class="leg void">Prázdno</span>
+          <span class="leg iso">Izočára ~40&nbsp;%</span>
+          <span class="leg support">Uchycení</span>
+          <span class="leg force">Síla</span>
+        </div>
+      </div>
+      <p class="footer-note">
+        Algoritmus SIMP (Solid Isotropic Material with Penalization) minimalizuje poddajnost
+        konstrukce při daném objemu materiálu. Běží celé v prohlížeči — bez serveru.
+      </p>
+    </main>
+  </div>
+
+  <script src="js/linalg.js"></script>
+  <script src="js/fem.js"></script>
+  <script src="js/topopt.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

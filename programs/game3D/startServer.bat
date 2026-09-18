@@ -1,1 +1,3 @@
-python -m http.server 8000
+@echo off
+cd /d "%~dp0"
+php -S localhost:8000

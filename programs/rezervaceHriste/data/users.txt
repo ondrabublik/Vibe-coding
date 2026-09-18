@@ -1,0 +1,22 @@
+[
+    {
+        "id": "u1",
+        "email": "admin@hriste.cz",
+        "name": "Administrátor",
+        "phone": "",
+        "passwordHash": "$2y$12$zMNnpHvhjWjLTzlcTkXOEuB4lq3XQ7gTheAEIYxfu9OA.rexcqywC",
+        "role": "admin",
+        "active": true,
+        "createdAt": "2026-08-17T14:20:51+02:00"
+    },
+    {
+        "id": "u2",
+        "email": "obublik@kme.zcu.cz",
+        "name": "Ondřej Bublík",
+        "phone": "776712321",
+        "passwordHash": "$2y$12$FxtfwqyEsBI4EGD6vaRkiOmbPfYs82IC44BTYJQyJHgajM8aDL3ca",
+        "role": "user",
+        "active": true,
+        "createdAt": "2026-08-17T14:28:02+02:00"
+    }
+]
