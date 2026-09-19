@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Stíhací simulátor</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <canvas id="hud"></canvas>
+    <div id="gfx" class="fxlayer"></div>
+    <div id="redout" class="fxlayer"></div>
+    <div id="hitflash" class="fxlayer"></div>
+
+    <div id="loading">
+      <div class="logo">STÍHACÍ <span>SIMULÁTOR</span></div>
+      <p id="loadingText">Načítám…</p>
+    </div>
+
+    <div id="menu" class="screen hidden">
+      <div class="panel">
+        <div class="logo">STÍHACÍ <span>SIMULÁTOR</span></div>
+        <p class="sub">Vzlétni z letiště, sestřel vlny nepřátelských stíhaček kanónem a raketami a vrať se přistát pro doplnění.</p>
+        <div class="row">
+          <span class="label">Obtížnost</span>
+          <div class="seg">
+            <button data-diff="easy">Snadná</button>
+            <button data-diff="normal">Normální</button>
+            <button data-diff="hard">Těžká</button>
+          </div>
+        </div>
+        <div class="row">
+          <label><input type="checkbox" id="optView" /> Začít v kokpitu</label>
+          <label><input type="checkbox" id="optInvert" /> ↑ = nos nahoru</label>
+          <label><input type="checkbox" id="optShadows" /> Stíny</label>
+        </div>
+        <button id="startBtn" class="big">VZLÉTNOUT</button>
+        <table class="keys">
+          <tr><td>W / S</td><td>plyn / ubrat (nad 90 % forsáž)</td></tr>
+          <tr><td>↓ / ↑</td><td>přitáhnout / potlačit (výškovka)</td></tr>
+          <tr><td>← / →</td><td>náklon</td></tr>
+          <tr><td>A / D</td><td>směrovka, na zemi řízení příďového kola</td></tr>
+          <tr><td>Mezerník</td><td>kanón</td></tr>
+          <tr><td>R / Enter</td><td>raketa (s červeným zámkem se navede na cíl)</td></tr>
+          <tr><td>T / Tab</td><td>další cíl</td></tr>
+          <tr><td>X</td><td>klamné cíle proti raketám</td></tr>
+          <tr><td>G · B</td><td>podvozek · brzdy / aerodynamická brzda</td></tr>
+          <tr><td>V</td><td>pohled z kokpitu / zezadu (táhnutím myši se rozhlížíš)</td></tr>
+          <tr><td>P / Esc · M</td><td>pauza · zvuk</td></tr>
+        </table>
+        <p class="tip">Vzlet: plný plyn, při ~280 km/h přitáhni. Přistání: vysunout podvozek, ~300 km/h, klesání pod 5 m/s, křídla v rovině.
+          Po každé vlně přistaň a zastav na letišti – stroj se doplní a po vzletu přiletí další vlna. Funguje i gamepad.</p>
+      </div>
+    </div>
+
+    <div id="help" class="hidden">
+      <b>Ovládání</b><br />
+      W/S plyn · ↓↑ výškovka · ←→ náklon · A/D směrovka<br />
+      Mezerník kanón · R raketa · T cíl · X klamné cíle<br />
+      G podvozek · B brzdy · V pohled · myš = rozhlížení · P pauza
+    </div>
+
+    <div id="pause" class="screen dim hidden">
+      <div class="panel small">
+        <h2>PAUZA</h2>
+        <button id="resumeBtn" class="big">Pokračovat</button>
+        <button id="quitBtn">Do menu</button>
+      </div>
+    </div>
+
+    <div id="gameover" class="screen dim hidden">
+      <div class="panel small">
+        <h2>KONEC MISE</h2>
+        <table class="stats">
+          <tr><td>Skóre</td><td id="finalScore">0</td></tr>
+          <tr><td>Sestřely</td><td id="finalKills">0</td></tr>
+          <tr><td>Vlna</td><td id="finalWave">0</td></tr>
+          <tr><td>Rekord</td><td id="finalBest">0</td></tr>
+        </table>
+        <button id="againBtn" class="big">Znovu vzlétnout</button>
+        <button id="menuBtn">Menu</button>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./js/main.js"></script>
+  </body>
+</html>
