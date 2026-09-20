@@ -54,7 +54,8 @@
 
       <div class="results" id="metrics"></div>
       <p class="note">
-        Model používá 2D neviskózní panelovou metodu s podmínkou Kutta.
+        Model používá 2D neviskózní panelovou metodu (Hess–Smith: konstantní
+        zdrojové panely + společný vír) s podmínkou Kutta.
         Výsledky jsou orientační a nezahrnují odtržení proudu.
       </p>
     </section>
@@ -62,8 +63,8 @@
     <section class="viz">
       <canvas id="airfoilCanvas" width="760" height="280"></canvas>
       <canvas id="cpCanvas" width="760" height="240"></canvas>
+      <canvas id="streamlineCanvas" width="760" height="260"></canvas>
       <canvas id="pressureCanvas" width="760" height="260"></canvas>
-      <canvas id="speedIsoCanvas" width="760" height="260"></canvas>
     </section>
   </div>
 
@@ -88,8 +89,8 @@
     const metricsDiv = document.getElementById("metrics");
     const airfoilCanvas = document.getElementById("airfoilCanvas");
     const cpCanvas = document.getElementById("cpCanvas");
+    const streamlineCanvas = document.getElementById("streamlineCanvas");
     const pressureCanvas = document.getElementById("pressureCanvas");
-    const speedIsoCanvas = document.getElementById("speedIsoCanvas");
 
     function linspace(a, b, n) {
       const arr = [];
@@ -157,6 +158,8 @@
       return points;
     }
 
+    const TWO_PI = 2 * Math.PI;
+
     function panelize(points) {
       let signedArea = 0;
       for (let i = 0; i < points.length; i++) {
@@ -165,7 +168,9 @@
         signedArea += p1.x * p2.y - p2.x * p1.y;
       }
       const isClockwise = signedArea < 0;
-      const circulationSign = isClockwise ? 1 : -1;
+      // Lokalni ramec panelu: +x podel tecny, +y = tecna otocena o +90 stupnu.
+      // Pri CCW obchazeni lezi vnejsek v y_local < 0, pri CW v y_local > 0.
+      const exteriorSide = isClockwise ? 1 : -1;
 
       const panels = [];
       for (let i = 0; i < points.length; i++) {
@@ -174,22 +179,23 @@
         const dx = p2.x - p1.x;
         const dy = p2.y - p1.y;
         const length = Math.hypot(dx, dy);
-        const phi = Math.atan2(dy, dx);
-        // Normala smeruje ven z profilu bez ohledu na CW/CCW orientaci bodu.
-        const nx = isClockwise ? dy / length : -dy / length;
-        const ny = isClockwise ? -dx / length : dx / length;
+        const tx = dx / length;
+        const ty = dy / length;
         panels.push({
           x1: p1.x, y1: p1.y,
           x2: p2.x, y2: p2.y,
           xc: 0.5 * (p1.x + p2.x),
           yc: 0.5 * (p1.y + p2.y),
           length,
-          tx: dx / length,
-          ty: dy / length,
-          nx,
-          ny,
-          phi,
-          circulationSign
+          tx,
+          ty,
+          // Vnejsi normala = exteriorSide * (tecna otocena o +90 stupnu).
+          nx: -exteriorSide * ty,
+          ny: exteriorSide * tx,
+          // cos(phi) a sin(phi) jsou primo slozky tecny - trigonometrie neni potreba.
+          cosPhi: tx,
+          sinPhi: ty,
+          exteriorSide
         });
       }
       return panels;
@@ -209,18 +215,11 @@
       return { x: 0.5 * (minX + maxX), y: 0.5 * (minY + maxY) };
     }
 
-    function rotatePoints(points, alphaDeg, center = { x: 0.5, y: 0 }) {
-      const a = alphaDeg * Math.PI / 180;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      return points.map((p) => ({
-        x: center.x + (p.x - center.x) * c - (p.y - center.y) * s,
-        y: center.y + (p.x - center.x) * s + (p.y - center.y) * c
-      }));
-    }
-
-    function rotatePoint(x, y, alphaDeg, center = { x: 0.5, y: 0 }) {
-      const a = alphaDeg * Math.PI / 180;
+    // Resici ramec: profil vodorovne, volny proud pod uhlem alfa.
+    // Vizualni ramec: volny proud vodorovne, profil naklonen o alfa.
+    // Vizual vznikne otocenim resiciho ramce o -alfa, zpet se prevadi o +alfa.
+    function rotateXY(x, y, angleDeg, center) {
+      const a = angleDeg * Math.PI / 180;
       const c = Math.cos(a);
       const s = Math.sin(a);
       return {
@@ -229,36 +228,47 @@
       };
     }
 
-    function rotateVector(u, v, alphaDeg) {
-      const a = alphaDeg * Math.PI / 180;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      return {
-        x: u * c - v * s,
-        y: -u * s - v * c
-      };
+    function toVisualPoints(points, alphaDeg, center) {
+      return points.map((p) => rotateXY(p.x, p.y, -alphaDeg, center));
     }
 
-    function inducedVelocityFromUnitVortex(panel, x, y) {
+    function toSolverPoint(x, y, alphaDeg, center) {
+      return rotateXY(x, y, alphaDeg, center);
+    }
+
+    function toVisualVector(u, v, alphaDeg) {
+      const a = -alphaDeg * Math.PI / 180;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      return { x: u * c - v * s, y: u * s + v * c };
+    }
+
+    // Rychlost indukovana panelem o jednotkove vydatnosti. Zdroj i vir sdileji
+    // stejny mezivypocet, proto se pocitaji naraz a zapisuji do out (bez alokace).
+    //   zdroj: (u,v)_local = ( lg,  dth)
+    //   vir  : (u,v)_local = (-dth, lg)   (kladna cirkulace proti smeru hod. rucicek)
+    // kde lg = ln(r1/r2)/2pi a dth = (th2 - th1)/2pi.
+    function panelInfluence(panel, x, y, out) {
       const dx = x - panel.x1;
       const dy = y - panel.y1;
-      const c = Math.cos(panel.phi);
-      const s = Math.sin(panel.phi);
+      const c = panel.cosPhi;
+      const s = panel.sinPhi;
       const xLocal = dx * c + dy * s;
       const yLocal = -dx * s + dy * c;
       const x2Local = xLocal - panel.length;
-      const r1 = Math.hypot(xLocal, yLocal);
-      const r2 = Math.hypot(x2Local, yLocal);
-      const th1 = Math.atan2(yLocal, xLocal);
-      const th2 = Math.atan2(yLocal, x2Local);
+      const eps = 1e-20;
+      const r1sq = xLocal * xLocal + yLocal * yLocal;
+      const r2sq = x2Local * x2Local + yLocal * yLocal;
+      const lg = 0.5 * Math.log((r1sq + eps) / (r2sq + eps)) / TWO_PI;
+      const dth = (Math.atan2(yLocal, x2Local) - Math.atan2(yLocal, xLocal)) / TWO_PI;
+      out.su = lg * c - dth * s;
+      out.sv = lg * s + dth * c;
+      out.vu = -dth * c - lg * s;
+      out.vv = -dth * s + lg * c;
+    }
 
-      const eps = 1e-10;
-      const uLocal = -(th2 - th1) / (2 * Math.PI);
-      const vLocal = Math.log(Math.max(r2, eps) / Math.max(r1, eps)) / (2 * Math.PI);
-      return {
-        u: uLocal * c - vLocal * s,
-        v: uLocal * s + vLocal * c
-      };
+    function makeInfluenceScratch() {
+      return { su: 0, sv: 0, vu: 0, vv: 0 };
     }
 
     function solveLinearSystem(A, b) {
@@ -316,73 +326,163 @@
     }
 
     function splitCpBranches(panels, cp) {
-      const upper = [];
-      const lower = [];
+      // Deli se podle nabezne hrany, ne podle znamenka y: u vyrazne prohnutych
+      // profilu (napr. NACA 6409) lezi cela spodni strana nad osou x.
+      let leIdx = 0;
+      let minX = Infinity;
+      let maxX = -Infinity;
       for (let i = 0; i < panels.length; i++) {
-        const point = { x: panels[i].xc, cp: cp[i] };
-        if (panels[i].yc >= 0) {
-          upper.push(point);
+        if (panels[i].xc < panels[leIdx].xc) leIdx = i;
+        if (panels[i].x1 < minX) minX = panels[i].x1;
+        if (panels[i].x1 > maxX) maxX = panels[i].x1;
+      }
+      const chord = Math.max(maxX - minX, 1e-9);
+
+      const runA = [];
+      const runB = [];
+      let sumA = 0;
+      let sumB = 0;
+      for (let i = 0; i < panels.length; i++) {
+        const point = { x: (panels[i].xc - minX) / chord, cp: cp[i] };
+        if (i <= leIdx) {
+          runA.push(point);
+          sumA += panels[i].yc;
         } else {
-          lower.push(point);
+          runB.push(point);
+          sumB += panels[i].yc;
         }
       }
+      const meanA = runA.length ? sumA / runA.length : 0;
+      const meanB = runB.length ? sumB / runB.length : 0;
+      const upper = meanA >= meanB ? runA : runB;
+      const lower = meanA >= meanB ? runB : runA;
       upper.sort((a, b) => a.x - b.x);
       lower.sort((a, b) => a.x - b.x);
       return { upper, lower };
     }
 
+    // Hess-Smith: n zdrojovych panelu o konstantni vydatnosti sigma_j plus jeden
+    // vir o konstantni hustote gamma spolecny vsem panelum. Neznamych je n+1,
+    // rovnic n podminek neproteknuti + 1 Kuttova podminka. Na rozdil od samotnych
+    // virovych panelu neni tato soustava singularni, takze rozlozeni Cp
+    // s rostoucim poctem panelu konverguje misto aby oscilovalo.
     function runPanelMethod(basePoints, alphaDeg, vInf, rho) {
       const points = basePoints;
       const panels = panelize(points);
       const n = panels.length;
-      const A = Array.from({ length: n }, () => Array(n).fill(0));
-      const rhs = Array(n).fill(0);
+      const m = n + 1;
+      const A = Array.from({ length: m }, () => Array(m).fill(0));
+      const rhs = Array(m).fill(0);
+      // Bt[i] prevadi reseni na tangencialni rychlost na vnejsi strane panelu i.
+      const Bt = Array.from({ length: n }, () => Array(m).fill(0));
       const alpha = alphaDeg * Math.PI / 180;
       const Ux = vInf * Math.cos(alpha);
       const Uy = vInf * Math.sin(alpha);
+      const infl = makeInfluenceScratch();
 
       for (let i = 0; i < n; i++) {
         const pi = panels[i];
         rhs[i] = -(Ux * pi.nx + Uy * pi.ny);
         for (let j = 0; j < n; j++) {
+          let sn;
+          let st;
+          let vn;
+          let vt;
           if (i === j) {
-            // Pro vortex panel je vlastni prispevek do normalove rovnice nulovy (principal value).
-            A[i][j] = 0;
+            // Vlastni prispevek ve stredu panelu, z vnejsi strany listu:
+            // zdroj dava +1/2 ve smeru vnejsi normaly, vir -exteriorSide/2 tecne.
+            sn = 0.5;
+            st = 0;
+            vn = 0;
+            vt = -0.5 * pi.exteriorSide;
           } else {
-            const v = inducedVelocityFromUnitVortex(panels[j], pi.xc, pi.yc);
-            A[i][j] = v.u * pi.nx + v.v * pi.ny;
+            panelInfluence(panels[j], pi.xc, pi.yc, infl);
+            sn = infl.su * pi.nx + infl.sv * pi.ny;
+            st = infl.su * pi.tx + infl.sv * pi.ty;
+            vn = infl.vu * pi.nx + infl.vv * pi.ny;
+            vt = infl.vu * pi.tx + infl.vv * pi.ty;
           }
+          A[i][j] = sn;
+          A[i][n] += vn;
+          Bt[i][j] = st;
+          Bt[i][n] += vt;
         }
       }
 
+      // Kuttova podminka: stejne velka rychlost na obou odtokovych panelech.
+      // Jejich tecny miri proti sobe, proto se tangencialni rychlosti scitaji.
       const te = findTrailingEdgePanelIndices(panels);
-      const kuttaRow = te.lowerIdx;
-      for (let j = 0; j < n; j++) A[kuttaRow][j] = 0;
-      A[kuttaRow][te.upperIdx] = 1;
-      A[kuttaRow][te.lowerIdx] = 1;
-      rhs[kuttaRow] = 0;
+      const a = te.upperIdx;
+      const b = te.lowerIdx;
+      const tDot = panels[a].tx * panels[b].tx + panels[a].ty * panels[b].ty;
+      const kuttaSign = tDot < 0 ? 1 : -1;
+      for (let j = 0; j < m; j++) A[n][j] = Bt[a][j] + kuttaSign * Bt[b][j];
+      rhs[n] = -(
+        (Ux * panels[a].tx + Uy * panels[a].ty) +
+        kuttaSign * (Ux * panels[b].tx + Uy * panels[b].ty)
+      );
 
-      const gamma = solveLinearSystem(A, rhs);
+      const solution = solveLinearSystem(A, rhs);
+      const sigma = solution.slice(0, n);
+      const gammaVortex = solution[n];
+
+      // Bezrozmerna sila z integrace tlaku po obvodu: dF/q = -cp * n_vnejsi * dl.
       const cp = [];
-      let circulation = 0;
+      let fx = 0;
+      let fy = 0;
       for (let i = 0; i < n; i++) {
         const pi = panels[i];
         let ut = Ux * pi.tx + Uy * pi.ty;
-        for (let j = 0; j < n; j++) {
-          if (i === j) continue;
-          const v = inducedVelocityFromUnitVortex(panels[j], pi.xc, pi.yc);
-          ut += gamma[j] * (v.u * pi.tx + v.v * pi.ty);
-        }
-        // Skok tangencialni rychlosti na vortex-sheetu.
-        ut += 0.5 * pi.circulationSign * gamma[i];
-        cp.push(1 - (ut / vInf) ** 2);
-        circulation += gamma[i] * pi.length;
+        for (let j = 0; j < m; j++) ut += Bt[i][j] * solution[j];
+        const cpi = 1 - (ut / vInf) ** 2;
+        cp.push(cpi);
+        fx += -cpi * pi.nx * pi.length;
+        fy += -cpi * pi.ny * pi.length;
       }
 
+      let minX = Infinity;
+      let maxX = -Infinity;
+      for (const p of points) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+      }
+      const chord = Math.max(maxX - minX, 1e-9);
+      // Vztlak je kolmy na volny proud, ktery svira s osou x uhel alfa.
+      const cl = (fy * Math.cos(alpha) - fx * Math.sin(alpha)) / chord;
+      const cd = (fx * Math.cos(alpha) + fy * Math.sin(alpha)) / chord;
+
+      // Cirkulace v aerodynamicke konvenci (kladna pro kladny vztlak): L' = rho*V*Gamma.
+      let perimeter = 0;
+      for (const p of panels) perimeter += p.length;
+      const circulation = -gammaVortex * perimeter;
+
       const q = 0.5 * rho * vInf * vInf;
-      const cl = (2 * circulation) / vInf;
-      const liftPerSpan = q * cl;
-      return { points, panels, cp, cl, circulation, liftPerSpan, gamma, Ux, Uy, vInf, rho };
+      const liftPerSpan = q * chord * cl;
+
+      // Geometrie panelu v typovanych polich - vnitrni smycka vyhodnocovani pole
+      // bezi az milionkrat, takze se vyplati vyhnout se pristupu na vlastnosti objektu.
+      const fast = {
+        n,
+        x1: new Float64Array(n),
+        y1: new Float64Array(n),
+        cos: new Float64Array(n),
+        sin: new Float64Array(n),
+        len: new Float64Array(n),
+        sigma: new Float64Array(n)
+      };
+      for (let i = 0; i < n; i++) {
+        fast.x1[i] = panels[i].x1;
+        fast.y1[i] = panels[i].y1;
+        fast.cos[i] = panels[i].cosPhi;
+        fast.sin[i] = panels[i].sinPhi;
+        fast.len[i] = panels[i].length;
+        fast.sigma[i] = sigma[i];
+      }
+
+      return {
+        points, panels, cp, cl, cd, chord, circulation, liftPerSpan,
+        sigma, gammaVortex, fast, Ux, Uy, vInf, rho
+      };
     }
 
     function drawAirfoil(points, alphaDeg) {
@@ -390,7 +490,7 @@
       const { width, height } = airfoilCanvas;
       ctx.clearRect(0, 0, width, height);
       const center = getProfileCenter(points);
-      const visualPoints = rotatePoints(points, alphaDeg, center);
+      const visualPoints = toVisualPoints(points, alphaDeg, center);
 
       const xs = visualPoints.map((p) => p.x);
       const ys = visualPoints.map((p) => p.y);
@@ -532,23 +632,63 @@
       return inside;
     }
 
-    function velocityAtPointInSolverFrame(x, y, panels, gamma, Ux, Uy) {
-      let u = Ux;
-      let v = Uy;
-      for (let j = 0; j < panels.length; j++) {
-        const pj = panels[j];
-        const dv = inducedVelocityFromUnitVortex(pj, x, y);
-        u += gamma[j] * dv.u;
-        v += gamma[j] * dv.v;
+    // Horka smycka: stejna matematika jako panelInfluence, ale prispevek zdroje
+    // i viru se scita jeste v lokalnim ramci, takze se rotuje jen jednou.
+    // Vetsina testovanych bodu lezi daleko od profilu, takze obalovy obdelnik
+    // usetri prochazeni vsech vrcholu polygonu.
+    function makePolygonTest(polygon) {
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const p of polygon) {
+        if (p.x < minX) minX = p.x;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.y > maxY) maxY = p.y;
+      }
+      return (x, y) => {
+        if (x < minX || x > maxX || y < minY || y > maxY) return false;
+        return pointInPolygon(x, y, polygon);
+      };
+    }
+
+    function velocityAtPointInSolverFrame(x, y, res) {
+      const f = res.fast;
+      const n = f.n;
+      const X1 = f.x1;
+      const Y1 = f.y1;
+      const C = f.cos;
+      const S = f.sin;
+      const L = f.len;
+      const SG = f.sigma;
+      const g = res.gammaVortex;
+      let u = res.Ux;
+      let v = res.Uy;
+      for (let j = 0; j < n; j++) {
+        const c = C[j];
+        const s = S[j];
+        const dx = x - X1[j];
+        const dy = y - Y1[j];
+        const xLocal = dx * c + dy * s;
+        const yLocal = -dx * s + dy * c;
+        const x2Local = xLocal - L[j];
+        const yy = yLocal * yLocal;
+        const lg = 0.5 * Math.log((xLocal * xLocal + yy + 1e-20) / (x2Local * x2Local + yy + 1e-20)) / TWO_PI;
+        const dth = (Math.atan2(yLocal, x2Local) - Math.atan2(yLocal, xLocal)) / TWO_PI;
+        const sj = SG[j];
+        const uLocal = sj * lg - g * dth;
+        const vLocal = sj * dth + g * lg;
+        u += uLocal * c - vLocal * s;
+        v += uLocal * s + vLocal * c;
       }
       return { u, v };
     }
 
-    function makeFieldGrid(res, alphaDeg, nx = 150, ny = 90) {
+    function makeFieldGrid(res, alphaDeg, nx = 120, ny = 72) {
       const pressure = Array.from({ length: ny }, () => Array(nx).fill(null));
-      const speed = Array.from({ length: ny }, () => Array(nx).fill(null));
       const center = getProfileCenter(res.points);
-      const visualPolygon = rotatePoints(res.points, alphaDeg, center);
+      const visualPolygon = toVisualPoints(res.points, alphaDeg, center);
       const polyX = visualPolygon.map((p) => p.x);
       const polyY = visualPolygon.map((p) => p.y);
       const minX = Math.min(...polyX);
@@ -566,28 +706,21 @@
         maxY: maxY + yMargin
       };
 
+      const insideProfile = makePolygonTest(visualPolygon);
       for (let iy = 0; iy < ny; iy++) {
         const y = domain.minY + (domain.maxY - domain.minY) * iy / (ny - 1);
         for (let ix = 0; ix < nx; ix++) {
           const x = domain.minX + (domain.maxX - domain.minX) * ix / (nx - 1);
-          if (pointInPolygon(x, y, visualPolygon)) continue;
+          if (insideProfile(x, y)) continue;
 
-          const solverPoint = rotatePoint(x, y, -alphaDeg, center);
-          const vel = velocityAtPointInSolverFrame(
-            solverPoint.x,
-            solverPoint.y,
-            res.panels,
-            res.gamma,
-            res.Ux,
-            res.Uy
-          );
+          const solverPoint = toSolverPoint(x, y, alphaDeg, center);
+          const vel = velocityAtPointInSolverFrame(solverPoint.x, solverPoint.y, res);
           const vmag = Math.hypot(vel.u, vel.v);
           const cp = 1 - (vmag / res.vInf) ** 2;
           pressure[iy][ix] = 0.5 * res.rho * res.vInf * res.vInf * cp;
-          speed[iy][ix] = vmag;
         }
       }
-      return { domain, pressure, speed, polygon: visualPolygon, center };
+      return { domain, pressure, polygon: visualPolygon, center };
     }
 
     function fieldToCanvasTransform(canvas, domain) {
@@ -617,39 +750,36 @@
       const { tx, ty, frame } = fieldToCanvasTransform(canvas, grid.domain);
       const inDomain = (x, y) =>
         x >= grid.domain.minX && x <= grid.domain.maxX && y >= grid.domain.minY && y <= grid.domain.maxY;
+      const insideProfile = makePolygonTest(grid.polygon);
       const dirFromVisualPoint = (x, y) => {
-        const solverPoint = rotatePoint(x, y, -alphaDeg, grid.center);
-        const velSolver = velocityAtPointInSolverFrame(
-          solverPoint.x,
-          solverPoint.y,
-          res.panels,
-          res.gamma,
-          res.Ux,
-          res.Uy
-        );
-        // Do vizualniho ramecku (rotovany profil) prevadime vektor opacnou rotaci,
+        const solverPoint = toSolverPoint(x, y, alphaDeg, grid.center);
+        const velSolver = velocityAtPointInSolverFrame(solverPoint.x, solverPoint.y, res);
+        // Vektor se do vizualniho ramce prevadi stejnou rotaci jako geometrie,
         // aby volny proud zustal vodorovny a proudnice nebyly zkreslene.
-        const velVisual = rotateVector(velSolver.u, velSolver.v, -alphaDeg);
+        const velVisual = toVisualVector(velSolver.u, velSolver.v, alphaDeg);
         const mag = Math.hypot(velVisual.x, velVisual.y);
         if (mag < 1e-9) return null;
         return { ux: velVisual.x / mag, uy: velVisual.y / mag };
       };
       const trace = (x0, y0, sign) => {
         const pts = [{ x: x0, y: y0 }];
-        const ds = 0.006;
-        for (let k = 0; k < 1000; k++) {
-          const last = pts[pts.length - 1];
-          if (!inDomain(last.x, last.y)) break;
-          if (pointInPolygon(last.x, last.y, grid.polygon)) break;
-          const dir = dirFromVisualPoint(last.x, last.y);
+        const ds = 0.009;
+        const maxSteps = 400;
+        let cx = x0;
+        let cy = y0;
+        // Vychozi bod je overen uz pri zadani semene, resp. v predchozi iteraci.
+        for (let k = 0; k < maxSteps; k++) {
+          const dir = dirFromVisualPoint(cx, cy);
           if (!dir) break;
-          const nx = last.x + sign * ds * dir.ux;
-          const ny = last.y + sign * ds * dir.uy;
-          const mx = 0.5 * (last.x + nx);
-          const my = 0.5 * (last.y + ny);
-          if (pointInPolygon(mx, my, grid.polygon)) break;
-          if (!inDomain(nx, ny) || pointInPolygon(nx, ny, grid.polygon)) break;
+          const nx = cx + sign * ds * dir.ux;
+          const ny = cy + sign * ds * dir.uy;
+          if (!inDomain(nx, ny)) break;
+          // Testuje se i stred kroku, aby proudnice nepreskocila tenkou odtokovou hranu.
+          if (insideProfile(0.5 * (cx + nx), 0.5 * (cy + ny))) break;
+          if (insideProfile(nx, ny)) break;
           pts.push({ x: nx, y: ny });
+          cx = nx;
+          cy = ny;
         }
         return pts;
       };
@@ -663,7 +793,7 @@
       for (let i = 0; i < seeds; i++) {
         const y0 = grid.domain.minY + (grid.domain.maxY - grid.domain.minY) * (i + 0.5) / seeds;
         const x0 = grid.domain.minX + 0.02;
-        if (pointInPolygon(x0, y0, grid.polygon)) continue;
+        if (insideProfile(x0, y0)) continue;
         const fwd = trace(x0, y0, 1);
         const bwd = trace(x0, y0, -1);
         const full = [...bwd.reverse(), ...fwd.slice(1)];
@@ -717,15 +847,18 @@
 
       const ny = grid.pressure.length;
       const nx = grid.pressure[0].length;
-      const values = [];
+      // Bez spread operatoru - pri jemnejsi mrizce by prekrocil limit argumentu.
+      let pMin = Infinity;
+      let pMax = -Infinity;
       for (let iy = 0; iy < ny; iy++) {
         for (let ix = 0; ix < nx; ix++) {
           const v = grid.pressure[iy][ix];
-          if (v !== null) values.push(v);
+          if (v === null) continue;
+          if (v < pMin) pMin = v;
+          if (v > pMax) pMax = v;
         }
       }
-      const pMin = Math.min(...values);
-      const pMax = Math.max(...values);
+      if (!isFinite(pMin) || !isFinite(pMax)) return;
       const levels = 25;
       const levelValues = [];
       for (let k = 1; k <= levels; k++) {
@@ -792,6 +925,8 @@
         ["Koeficient vztlaku CL", res.cl.toFixed(4)],
         ["Cirkulace Γ [m²/s]", res.circulation.toFixed(4)],
         ["Vztlak na jednotku rozpětí L' [N/m]", res.liftPerSpan.toFixed(2)],
+        // Nevazky model musi dat nulovy odpor (d'Alembert) - slouzi jako kontrola.
+        ["Numerický odpor CD (má být ≈ 0)", res.cd.toFixed(5)],
         ["Panelů", String(res.panels.length)]
       ];
       for (const [label, value] of items) {
@@ -806,20 +941,62 @@
       return state.profile === "custom" ? state.customNaca : state.profile;
     }
 
+    // Reseni, geometrie a Cp jsou levne (jednotky az desitky ms) a kresli se hned.
+    // Rychlostni pole a proudnice stoji radove stovky ms, proto se odkladaji.
+    let lastResult = null;
+    let lastAlpha = 0;
+    let fieldTimer = null;
+
+    function clearFieldCanvases() {
+      for (const canvas of [streamlineCanvas, pressureCanvas]) {
+        canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    function drawFields() {
+      fieldTimer = null;
+      if (!lastResult) return;
+      const field = makeFieldGrid(lastResult, lastAlpha);
+      drawStreamlines(streamlineCanvas, field, lastResult, lastAlpha, "Proudnice v okolí profilu");
+      drawPressureContours(pressureCanvas, field, "Izočáry tlakového pole (25 hladin)");
+    }
+
+    function scheduleFields() {
+      if (fieldTimer !== null) clearTimeout(fieldTimer);
+      fieldTimer = setTimeout(drawFields, 200);
+    }
+
     function simulate() {
       try {
         const code = activeProfileCode();
         const points = naca4Coordinates(code, Math.floor(state.nPanels / 2) + 1);
         const res = runPanelMethod(points, state.alpha, state.velocity, state.density);
+        lastResult = res;
+        lastAlpha = state.alpha;
         drawAirfoil(res.points, state.alpha);
         drawCp(res.panels, res.cp);
-        const field = makeFieldGrid(res, state.alpha);
-        drawStreamlines(pressureCanvas, field, res, state.alpha, "Proudnice v okoli profilu");
-        drawPressureContours(speedIsoCanvas, field, "Izočary tlakoveho pole (25 hladin)");
         updateMetrics(res);
+        scheduleFields();
       } catch (err) {
+        lastResult = null;
+        if (fieldTimer !== null) {
+          clearTimeout(fieldTimer);
+          fieldTimer = null;
+        }
+        clearFieldCanvases();
         metricsDiv.innerHTML = `<div style="color:#fca5a5;">${err.message}</div>`;
       }
+    }
+
+    // Jeden pruchod (reseni + pole + proudnice) trva desitky az stovky ms,
+    // takze se udalosti "input" sdruzuji a kresli se az po uklidneni ovladace.
+    let simulateTimer = null;
+    function scheduleSimulate() {
+      if (simulateTimer !== null) clearTimeout(simulateTimer);
+      simulateTimer = setTimeout(() => {
+        simulateTimer = null;
+        simulate();
+      }, 120);
     }
 
     profileSelect.addEventListener("change", () => {
@@ -830,29 +1007,29 @@
 
     customInput.addEventListener("input", () => {
       state.customNaca = customInput.value;
-      if (state.profile === "custom") simulate();
+      if (state.profile === "custom") scheduleSimulate();
     });
 
     alphaInput.addEventListener("input", () => {
       state.alpha = Number(alphaInput.value);
       alphaLabel.textContent = `${state.alpha.toFixed(1)}°`;
-      simulate();
+      scheduleSimulate();
     });
 
     panelInput.addEventListener("input", () => {
       state.nPanels = Number(panelInput.value);
       panelLabel.textContent = String(state.nPanels);
-      simulate();
+      scheduleSimulate();
     });
 
     velocityInput.addEventListener("input", () => {
       state.velocity = Math.max(1, Number(velocityInput.value) || 1);
-      simulate();
+      scheduleSimulate();
     });
 
     densityInput.addEventListener("input", () => {
       state.density = Math.max(0.1, Number(densityInput.value) || 1.225);
-      simulate();
+      scheduleSimulate();
     });
 
     simulate();
