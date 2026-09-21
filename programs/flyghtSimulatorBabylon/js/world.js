@@ -51,6 +51,8 @@
         if (h < BW.WATER_LEVEL + 8 || h > 200) continue;
         this.villages.push({ x, z });
       }
+      // Ground-attack mission: the enemy depot site is chosen before trees and houses are placed.
+      this.site = game.mode === 'ground' ? BW.pickDepotSite(this) : null;
       this.buildSky();
       this.buildGround();
       this.buildWater();
@@ -58,6 +60,7 @@
       this.buildTrees();
       this.buildVillages();
       this.buildAirfield();
+      this.buildShips();
     }
 
     buildSky() {
@@ -86,7 +89,11 @@
       const n = pos.length / 3;
       for (let i = 0; i < n; i++) {
         const x = pos[i * 3], z = pos[i * 3 + 2];
-        pos[i * 3 + 1] = BW.terrainHeight(x, z);
+        let h = BW.terrainHeight(x, z);
+        // Push the lake beds well below the water plane: the shoreline then crosses the water at a steep
+        // angle and the two surfaces never fight for depth (no flickering). Gameplay uses the analytic height.
+        if (h < BW.WATER_LEVEL) h = BW.WATER_LEVEL - 2 - (BW.WATER_LEVEL - h) * 2.5;
+        pos[i * 3 + 1] = h;
         uvs[i * 2] = x / W + 0.5;
         uvs[i * 2 + 1] = z / W + 0.5;
       }
@@ -176,6 +183,17 @@
         ctx.fillStyle = 'rgba(140,125,95,0.8)';
         ctx.beginPath(); ctx.arc(cx, cy, 16, 0, Math.PI * 2); ctx.fill();
       }
+      // Trampled ground of the enemy depot and its access road
+      if (this.site) {
+        const [cx, cy] = toC(this.site.x, this.site.z);
+        let near = this.villages[0];
+        for (const v of this.villages) if (Math.hypot(v.x - this.site.x, v.z - this.site.z) < Math.hypot(near.x - this.site.x, near.z - this.site.z)) near = v;
+        const [vx, vy] = toC(near.x, near.z);
+        ctx.strokeStyle = 'rgba(150,130,95,0.9)'; ctx.lineWidth = 1.6;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(vx, vy); ctx.stroke();
+        ctx.fillStyle = 'rgba(128,108,78,0.55)';
+        ctx.beginPath(); ctx.ellipse(cx, cy, 95 * k, 75 * k, 0.4, 0, Math.PI * 2); ctx.fill();
+      }
       // Height based overlay: shores, rock and snow (low-res then smoothed)
       const L = 256, ov = document.createElement('canvas');
       ov.width = ov.height = L;
@@ -199,15 +217,274 @@
     }
 
     buildWater() {
-      const w = MB.CreateGround('water', { width: BW.WORLD_SIZE, height: BW.WORLD_SIZE, subdivisions: 1 }, this.scene);
+      const scene = this.scene, W = BW.WORLD_SIZE;
+      const w = MB.CreateGround('water', { width: W, height: W, subdivisions: 1 }, scene);
       w.position.y = BW.WATER_LEVEL;
-      const m = new BABYLON.StandardMaterial('waterMat', this.scene);
-      m.diffuseColor = new C3(0.2, 0.33, 0.42);
-      m.specularColor = new C3(0.6, 0.6, 0.6);
-      m.specularPower = 64;
+      const m = new BABYLON.StandardMaterial('waterMat', scene);
+      // Colour variation (large tiles) ...
+      const col = softTexture(scene, 'waterCol', 256, (ctx, S) => {
+        const rng = BW.rng(77);
+        ctx.fillStyle = '#3d6378'; ctx.fillRect(0, 0, S, S);
+        for (let i = 0; i < 260; i++) {
+          const x = rng() * S, y = rng() * S, r = 10 + rng() * 40;
+          const c = rng() < 0.5 ? '30,70,90,' : '110,150,165,', a = rng() < 0.5 ? 0.2 : 0.14;
+          for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
+            const gr = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+            gr.addColorStop(0, 'rgba(' + c + a + ')'); gr.addColorStop(1, 'rgba(' + c + '0)');
+            ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2); ctx.fill();
+          }
+        }
+      });
+      col.hasAlpha = false;
+      col.uScale = col.vScale = W / 900;
+      col.wrapU = col.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+      // ... and small waves: tileable normal map from a sum of sines with integer frequencies.
+      const S = 256;
+      const bump = new BABYLON.DynamicTexture('waterBump', { width: S, height: S }, scene, true);
+      const ctx = bump.getContext(), img = ctx.createImageData(S, S), rng = BW.rng(31);
+      const waves = [];
+      for (let i = 0; i < 14; i++) {
+        const kx = Math.round((rng() - 0.5) * 12), ky = Math.round(1 + rng() * 6) * (rng() < 0.5 ? -1 : 1);
+        waves.push({ kx, ky, a: 1 / Math.hypot(kx, ky), ph: rng() * 6.283 });
+      }
+      for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        let dx = 0, dy = 0;
+        for (const wv of waves) {
+          const c = Math.cos(((wv.kx * x + wv.ky * y) / S) * 6.283 + wv.ph) * wv.a;
+          dx += c * wv.kx; dy += c * wv.ky;
+        }
+        const nx = -dx * 0.09, ny = -dy * 0.09, l = Math.hypot(nx, ny, 1), o = (y * S + x) * 4;
+        img.data[o] = (nx / l * 0.5 + 0.5) * 255;
+        img.data[o + 1] = (ny / l * 0.5 + 0.5) * 255;
+        img.data[o + 2] = (1 / l * 0.5 + 0.5) * 255;
+        img.data[o + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      bump.update();
+      bump.wrapU = bump.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+      bump.uScale = bump.vScale = W / 45;
+      bump.level = 0.4;
+      bump.anisotropicFilteringLevel = 8;
+      m.diffuseTexture = col;
+      m.bumpTexture = bump;
+      m.specularColor = new C3(0.5, 0.5, 0.47);
+      m.specularPower = 200;
+      m.emissiveColor = new C3(0.04, 0.07, 0.09);
       w.material = m;
       w.isPickable = false;
+      w.receiveShadows = true;
       w.freezeWorldMatrix();
+      this.waterBump = bump;
+    }
+
+    // ------------------------------------------------------------ ships
+    // Deep enough spots on the lakes, away from each other.
+    findWaterSpots(n, rng) {
+      const out = [], WL = BW.WATER_LEVEL;
+      for (let i = 0; i < 6000 && out.length < n; i++) {
+        const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * (BW.BATTLE_RADIUS - 300);
+        const x = Math.sin(a) * r, z = Math.cos(a) * r;
+        if (BW.terrainHeight(x, z) > WL - 5) continue;
+        let ok = true;
+        for (let k = 0; k < 8 && ok; k++) {
+          const b = (k / 8) * Math.PI * 2;
+          if (BW.terrainHeight(x + Math.sin(b) * 70, z + Math.cos(b) * 70) > WL - 2) ok = false;
+        }
+        if (ok && out.every((o) => Math.hypot(o.x - x, o.z - z) > 700)) out.push({ x, z });
+      }
+      return out;
+    }
+
+    buildShips() {
+      const scene = this.scene, rng = BW.rng(21);
+      const wakeMat = new BABYLON.StandardMaterial('wakeMat', scene);
+      // Foam: speckles fading out along the wake (u runs from the stern backwards).
+      wakeMat.diffuseTexture = softTexture(scene, 'wakeTex', 128, (ctx, S) => {
+        const r = BW.rng(5);
+        ctx.clearRect(0, 0, S, S);
+        for (let i = 0; i < 900; i++) {
+          const x = Math.pow(r(), 1.6) * S, y = r() * S, fade = 1 - x / S;
+          ctx.fillStyle = `rgba(255,255,255,${(0.25 + r() * 0.35) * fade})`;
+          ctx.beginPath(); ctx.ellipse(x, y, 2 + r() * 5, 1 + r() * 2.5, 0, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+      wakeMat.useAlphaFromDiffuseTexture = true;
+      wakeMat.emissiveColor = new C3(0.6, 0.62, 0.62);
+      wakeMat.specularColor = C3.Black();
+      wakeMat.backFaceCulling = false;
+      wakeMat.disableDepthWrite = true;
+      this.wakeMat = wakeMat;
+      this.ships = [];
+      this.findWaterSpots(8, rng).forEach((sp, i) => {
+        const sail = i % 3 === 2;
+        const ship = sail ? this.buildSailboat(rng) : this.buildSteamer(rng);
+        Object.assign(ship, {
+          sail, x: sp.x, z: sp.z, heading: rng() * Math.PI * 2, speed: sail ? 2.5 : 4 + rng() * 1.5,
+          turnDir: 0, bob: rng() * 6,
+        });
+        ship.root.meshes = ship.meshes;
+        ship.meshes.forEach((mm) => {
+          mm.isPickable = false;
+          if (this.game.shadowGen) this.game.shadowGen.addShadowCaster(mm, false);
+        });
+        this.ships.push(ship);
+      });
+      this.shipT = 0;
+    }
+
+    // Hull lofted through stations {z, w (half beam), t (deck height), d (draft)}: sides + deck.
+    hull(stations, hullMat, deckMat) {
+      const scene = this.scene;
+      const sides = stations.map((s) => [
+        new V3(-s.w, s.t, s.z), new V3(-s.w * 0.97, 0, s.z), new V3(-s.w * 0.75, -s.d * 0.7, s.z), new V3(0, -s.d, s.z),
+        new V3(s.w * 0.75, -s.d * 0.7, s.z), new V3(s.w * 0.97, 0, s.z), new V3(s.w, s.t, s.z),
+      ]);
+      const h = MB.CreateRibbon('hull', { pathArray: sides, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, scene);
+      h.material = hullMat;
+      const deck = MB.CreateRibbon('deck', {
+        pathArray: [stations.map((s) => new V3(-s.w * 0.97, s.t - 0.08, s.z)), stations.map((s) => new V3(s.w * 0.97, s.t - 0.08, s.z))],
+        sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+      }, scene);
+      deck.material = deckMat;
+      return [h, deck];
+    }
+
+    // V-shaped wake behind the stern (fades out along its length). It has its own node that follows
+    // only the ship's position and heading: the hull's pitching would dip the long strips under water.
+    wake(ship, sternZ, beam, len) {
+      const out = [];
+      const root = (ship.wakeRoot = new BABYLON.TransformNode('wakeRoot', this.scene));
+      for (const sx of [-1, 1]) {
+        const a = [new V3(sx * beam * 0.7, 0, sternZ), new V3(sx * (beam * 0.9 + len * 0.16), 0, sternZ - len)];
+        const b = [new V3(sx * beam * 0.2, 0, sternZ), new V3(sx * (beam * 0.5 + len * 0.13), 0, sternZ - len)];
+        const m = MB.CreateRibbon('wake', { pathArray: [a, b], sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);
+        m.material = this.wakeMat;
+        m.parent = root;
+        m.isPickable = false;
+        out.push(m);
+      }
+      return out;
+    }
+
+    finishShip(root, parts) {
+      const byMat = new Map();
+      for (const p of parts) {
+        if (!byMat.has(p.material)) byMat.set(p.material, []);
+        byMat.get(p.material).push(p);
+      }
+      const meshes = [];
+      for (const [mat, list] of byMat) {
+        const m = BABYLON.Mesh.MergeMeshes(list, true, true);
+        m.material = mat;
+        m.parent = root;
+        meshes.push(m);
+      }
+      return meshes;
+    }
+
+    // Small coastal cargo steamer, ~34 m.
+    buildSteamer(rng) {
+      const scene = this.scene, root = new BABYLON.TransformNode('steamer', scene);
+      const hullC = ['#2a2927', '#3a2b24', '#2c3438'][(rng() * 3) | 0];
+      const parts = this.hull([
+        { z: -17, w: 0.4, t: 2.4, d: 1.2 }, { z: -16.4, w: 2.8, t: 2.3, d: 1.8 }, { z: -13, w: 3.4, t: 2.0, d: 2.2 },
+        { z: -4, w: 3.6, t: 1.9, d: 2.3 }, { z: 5, w: 3.6, t: 1.9, d: 2.3 }, { z: 10.5, w: 3.0, t: 2.1, d: 2.2 },
+        { z: 14.5, w: 1.6, t: 2.5, d: 1.9 }, { z: 17.3, w: 0.06, t: 3.0, d: 1.2 },
+      ], BW.getMat(scene, hullC, { spec: 0.15 }), BW.getMat(scene, '#8a6f4e'));
+      const white = BW.getMat(scene, '#dcd6c4'), dark = BW.getMat(scene, '#232220', { spec: 0.2 });
+      const box = (w, h, d, x, y, z, mat) => { const b = MB.CreateBox('b', { width: w, height: h, depth: d }, scene); b.position.set(x, y, z); b.material = mat; parts.push(b); return b; };
+      const cyl = (h, dia, x, y, z, mat, dTop) => {
+        const c = MB.CreateCylinder('c', { height: h, diameter: dia, diameterTop: dTop === undefined ? dia : dTop, tessellation: 14 }, scene);
+        c.position.set(x, y, z); c.material = mat; parts.push(c); return c;
+      };
+      box(6, 2.4, 9, 0, 3.0, -3, white); // deckhouse
+      box(4.6, 1.8, 3, 0, 5.1, -0.5, white); // bridge
+      box(5.2, 0.15, 3.6, 0, 6.05, -0.5, dark);
+      cyl(5.5, 1.7, 0, 6.6, -5, dark); // funnel
+      cyl(0.9, 1.75, 0, 8.6, -5, BW.getMat(scene, ['#9a2a20', '#c9b24a', '#e0e0d8'][(rng() * 3) | 0]));
+      box(4, 0.6, 4.5, 0, 2.2, 8, dark); // cargo hatches
+      box(4, 0.6, 4, 0, 2.3, -12, dark);
+      cyl(11, 0.25, 0, 7.5, 11.5, BW.getMat(scene, '#5a4632'), 0.15); // masts
+      cyl(10, 0.25, 0, 7.2, -14.2, BW.getMat(scene, '#5a4632'), 0.15);
+      for (const sx of [-1, 1]) {
+        const lb = MB.CreateCylinder('lb', { height: 4.2, diameter: 1.1, tessellation: 10 }, scene);
+        lb.rotation.x = Math.PI / 2; lb.scaling.set(1, 1, 0.6); lb.position.set(sx * 3.1, 4.6, -6); lb.material = white; parts.push(lb);
+      }
+      const meshes = this.finishShip(root, parts);
+      // Invisible emitter at the funnel top for the smoke (added once the effects exist).
+      const funnel = new BABYLON.TransformNode('funnelTop', scene);
+      funnel.parent = root; funnel.position.set(0, 9.4, -5);
+      const ship = { root, meshes, funnel };
+      meshes.push(...this.wake(ship, -16, 3.2, 90));
+      return ship;
+    }
+
+    // Fishing sailboat, ~11 m.
+    buildSailboat(rng) {
+      const scene = this.scene, root = new BABYLON.TransformNode('sailboat', scene);
+      const parts = this.hull([
+        { z: -5.2, w: 0.3, t: 0.9, d: 0.6 }, { z: -4.8, w: 1.4, t: 0.85, d: 0.9 }, { z: 0, w: 1.9, t: 0.8, d: 1.1 },
+        { z: 3.5, w: 1.4, t: 0.95, d: 1.0 }, { z: 5.6, w: 0.05, t: 1.3, d: 0.6 },
+      ], BW.getMat(scene, ['#4a3a2a', '#35505a', '#6a2e24'][(rng() * 3) | 0], { spec: 0.1 }), BW.getMat(scene, '#8a6f4e'));
+      const wood = BW.getMat(scene, '#5a4632');
+      const mast = MB.CreateCylinder('mast', { height: 9, diameterTop: 0.1, diameterBottom: 0.18, tessellation: 8 }, scene);
+      mast.position.set(0, 5.2, 1.2); mast.material = wood; parts.push(mast);
+      const cabin = MB.CreateBox('cab', { width: 2, height: 1, depth: 2.2 }, scene);
+      cabin.position.set(0, 1.2, -2.2); cabin.material = BW.getMat(scene, '#8a6f4e'); parts.push(cabin);
+      const sail = MB.CreateRibbon('sail', {
+        pathArray: [[new V3(0, 1.6, 1.0), new V3(0, 9.3, 1.0)], [new V3(0.8, 1.6, -3.8), new V3(0.1, 2.2, -3.4)]],
+        sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+      }, scene);
+      sail.material = BW.getMat(scene, ['#e4dcc4', '#c9a27a', '#b8563c'][(rng() * 3) | 0], { twoSided: true });
+      parts.push(sail);
+      const meshes = this.finishShip(root, parts);
+      const ship = { root, meshes };
+      meshes.push(...this.wake(ship, -5, 1.5, 35));
+      return ship;
+    }
+
+    addShipSmoke(fx) {
+      for (const s of this.ships) {
+        if (!s.funnel) continue;
+        const e = MB.CreateBox('smokeEm', { size: 0.1 }, this.scene);
+        e.parent = s.funnel; e.isVisible = false; e.isPickable = false;
+        const ps = fx.makeSystem(90, e);
+        ps.minEmitBox = new V3(-0.4, 0, -0.4); ps.maxEmitBox = new V3(0.4, 0, 0.4);
+        ps.color1 = new BABYLON.Color4(0.18, 0.17, 0.16, 0.55);
+        ps.color2 = new BABYLON.Color4(0.3, 0.29, 0.28, 0.45);
+        ps.colorDead = new BABYLON.Color4(0.5, 0.5, 0.5, 0);
+        ps.minLifeTime = 5; ps.maxLifeTime = 8;
+        ps.emitRate = 10;
+        ps.direction1 = new V3(-0.2, 1, -0.2); ps.direction2 = new V3(0.2, 1, 0.2);
+        ps.minEmitPower = 1.5; ps.maxEmitPower = 2.5;
+        ps.gravity = new V3(1.2, 0.3, 0.6);
+        ps.addSizeGradient(0, 1.8); ps.addSizeGradient(1, 11);
+        ps.blendMode = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+        ps.start();
+      }
+    }
+
+    update(dt) {
+      this.shipT += dt;
+      if (this.waterBump) { this.waterBump.uOffset += dt * 0.012; this.waterBump.vOffset += dt * 0.007; }
+      const WL = BW.WATER_LEVEL, t = this.shipT;
+      const deep = (s, d, a) => BW.terrainHeight(s.x + Math.sin(s.heading + a) * d, s.z + Math.cos(s.heading + a) * d) < WL - 2.5;
+      for (const s of this.ships) {
+        // Steer away from the shore: turn toward the freer side while the way ahead is shallow.
+        if (!deep(s, 80, 0) || !deep(s, 50, 0.45) || !deep(s, 50, -0.45)) {
+          if (!s.turnDir) s.turnDir = deep(s, 70, 0.9) ? 1 : deep(s, 70, -0.9) ? -1 : (Math.random() < 0.5 ? 1 : -1);
+          s.heading += s.turnDir * 0.09 * dt;
+        } else s.turnDir = 0;
+        if (deep(s, 20, 0)) {
+          const v = s.speed * (s.turnDir ? 0.6 : 1) * dt;
+          s.x += Math.sin(s.heading) * v; s.z += Math.cos(s.heading) * v;
+        }
+        const r = s.root;
+        r.position.set(s.x, WL + Math.sin(t * 0.9 + s.bob) * 0.08, s.z);
+        s.wakeRoot.position.set(s.x, WL + 0.1, s.z);
+        s.wakeRoot.rotation.y = s.heading;
+        r.rotation.set(Math.sin(t * 0.6 + s.bob) * 0.012, s.heading, Math.sin(t * 0.8 + s.bob * 2) * (s.sail ? 0.05 : 0.02) + (s.sail ? 0.06 : 0));
+      }
     }
 
     buildClouds() {
@@ -277,6 +554,7 @@
       const bufs = [[], []];
       const place = (x, z) => {
         if (Math.abs(x) < 320 && Math.abs(z) < 1500) return;
+        if (this.site && Math.hypot(x - this.site.x, z - this.site.z) < 260) return;
         const h = BW.terrainHeight(x, z);
         if (h < BW.WATER_LEVEL + 3 || h > 420) return;
         const s = 0.7 + rng() * 0.7;

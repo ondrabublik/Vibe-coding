@@ -31,6 +31,16 @@
     constructor() {
       this.canvas = $('renderCanvas');
       this.engine = new BABYLON.Engine(this.canvas, true, { stencil: true }, true);
+      // Reversed depth: far better depth precision at distance (no flickering where water meets the shore).
+      this.engine.useReverseDepthBuffer = true;
+      // Phones and tablets: on-screen controls, and render at most at 1.5x CSS resolution
+      // (full device resolution of a phone screen costs far more GPU time than it adds).
+      this.touchUI = BW.isTouch();
+      this.touch = { sx: 0, sy: 0, fire: false, brake: false };
+      if (this.touchUI) {
+        document.body.classList.add('touch');
+        this.engine.setHardwareScalingLevel(Math.max(1, (window.devicePixelRatio || 1) / 1.5));
+      }
       this.audio = new BW.Audio();
       this.hud = new BW.HUD(this);
       this.keys = {};
@@ -40,15 +50,23 @@
       this.state = 'menu';
       this.scene = null;
       this.planes = [];
-      this.options = Object.assign({ difficulty: 'normal', invert: false, sound: true, cockpit: false }, this.loadOptions());
+      this.options = Object.assign({ mode: 'dogfight', difficulty: 'normal', invert: false, sound: true, cockpit: false }, this.loadOptions());
+      if (!BW.MODES[this.options.mode]) this.options.mode = 'dogfight';
+      this.targets = [];
       if (!this.options.mouseMode) this.options.mouseMode = this.options.mouse ? 'stick' : 'aim';
+      if (!this.options.touchMode) this.options.touchMode = 'aim';
       this.aim = { yaw: 0, pitch: 0 };
       this.aimDir = new V3(0, 0, 1);
       this.gpPrev = {};
       this.setupInput();
       this.setupUI();
+      if (this.touchUI) this.touchCtl = new BW.TouchControls(this);
       this.engine.runRenderLoop(() => this.frame());
-      window.addEventListener('resize', () => this.engine.resize());
+      window.addEventListener('resize', () => {
+        this.engine.resize();
+        // Phone turned to portrait: pause (the "rotate the device" prompt covers the screen).
+        if (this.touchUI && window.innerHeight > window.innerWidth) this.setPaused(true);
+      });
     }
 
     loadOptions() {
@@ -60,12 +78,21 @@
 
     // ------------------------------------------------------------ UI
     setupUI() {
+      const modes = $('modeList');
+      for (const [key, m] of Object.entries(BW.MODES)) {
+        const b = document.createElement('button');
+        b.className = 'diff';
+        b.dataset.key = key;
+        b.innerHTML = `<b>${m.name}</b><span>${m.desc}</span>`;
+        b.addEventListener('click', () => { this.options.mode = key; this.refreshMenu(); });
+        modes.appendChild(b);
+      }
       const list = $('diffList');
       for (const [key, d] of Object.entries(BW.DIFFICULTIES)) {
         const b = document.createElement('button');
         b.className = 'diff';
         b.dataset.key = key;
-        b.innerHTML = `<b>${d.name}</b><span>${d.desc}</span>`;
+        b.innerHTML = `<b>${d.name}</b><span></span>`;
         b.addEventListener('click', () => { this.options.difficulty = key; this.refreshMenu(); });
         list.appendChild(b);
       }
@@ -81,6 +108,9 @@
       const mm = $('optMouseMode');
       mm.value = this.options.mouseMode;
       mm.addEventListener('change', () => { this.options.mouseMode = mm.value; this.saveOptions(); });
+      const tm = $('optTouchMode');
+      tm.value = this.options.touchMode;
+      tm.addEventListener('change', () => { this.options.touchMode = tm.value; this.saveOptions(); });
       bind('optInvert', 'invert'); bind('optSound', 'sound'); bind('optCockpit', 'cockpit');
       this.audio.setMuted(!this.options.sound);
       $('startBtn').addEventListener('click', () => this.startMission());
@@ -93,7 +123,12 @@
     }
 
     refreshMenu() {
-      document.querySelectorAll('#diffList .diff').forEach((b) => b.classList.toggle('sel', b.dataset.key === this.options.difficulty));
+      const mode = BW.MODES[this.options.mode];
+      document.querySelectorAll('#modeList .diff').forEach((b) => b.classList.toggle('sel', b.dataset.key === this.options.mode));
+      document.querySelectorAll('#diffList .diff').forEach((b) => {
+        b.classList.toggle('sel', b.dataset.key === this.options.difficulty);
+        b.lastChild.textContent = mode.diffDesc(BW.DIFFICULTIES[b.dataset.key]);
+      });
       this.saveOptions();
     }
 
@@ -103,6 +138,8 @@
       $('endScreen').classList.add('hidden');
       $('menu').classList.remove('hidden');
       this.hud.show(false);
+      document.body.classList.remove('ingame');
+      if (this.touchCtl) this.touchCtl.show(false);
       this.audio.update(null, false);
     }
 
@@ -149,9 +186,8 @@
         if (this.mouse.right) {
           this.look.yaw += e.movementX * 0.005;
           this.look.pitch = BW.clamp(this.look.pitch + e.movementY * 0.005, -1.2, 1.2);
-        } else if (this.options.mouseMode === 'aim' && this.state === 'playing') {
+        } else if (!this.touchUI && this.options.mouseMode === 'aim' && this.state === 'playing') {
           // Mouse aim: moving the mouse moves the point the plane flies toward.
-          const inv = this.options.invert ? -1 : 1;
           // Clamp single events: browsers occasionally report huge jumps under pointer lock.
           const dx = BW.clamp(e.movementX, -120, 120), dy = BW.clamp(e.movementY, -120, 120);
           if (!this.aimTouched) {
@@ -164,21 +200,22 @@
             if (this.aimAccum < 25) return;
             this.aimAccum = 0;
           }
-          this.aim.yaw += dx * 0.0022;
-          this.aim.pitch = BW.clamp(this.aim.pitch - dy * 0.0022 * inv, -AIM_MAX_PITCH, AIM_MAX_PITCH);
-          this.aimTouched = true;
-          if (this.player && !this.player.onGround) this.leashAim(this.player);
+          this.moveAim(dx * 0.0022, dy * 0.0022);
         }
       });
       c.addEventListener('mousedown', (e) => {
+        // (Taps on a touch screen also send mouse events: they must not fire the guns.)
+        if (this.touchUI) return;
         if (e.button === 0) this.mouse.left = true;
         if (e.button === 2) this.mouse.right = true;
         this.lockPointer();
       });
       document.addEventListener('pointerlockchange', () => {
         // Leaving pointer lock (Esc) pauses the game in mouse-aim mode.
-        if (!document.pointerLockElement && this.state === 'playing' && this.options.mouseMode === 'aim') this.setPaused(true);
+        if (!document.pointerLockElement && this.state === 'playing' && this.aimMode() && !this.touchUI) this.setPaused(true);
       });
+      // Switching to another app or tab (phone call, notification...) pauses the game.
+      document.addEventListener('visibilitychange', () => { if (document.hidden) this.setPaused(true); });
       // Mouse wheel: throttle (up = more power), 5 % per notch.
       c.addEventListener('wheel', (e) => {
         if (this.state !== 'playing' || !this.player || !this.player.alive) return;
@@ -192,8 +229,21 @@
       });
     }
 
+    // Mouse-aim style flying: with the mouse (option), or dragging a finger on a touch screen (option).
+    aimMode() { return this.touchUI ? this.options.touchMode === 'aim' : this.options.mouseMode === 'aim'; }
+
+    // Move the aim point by angles in radians (screen right / down positive).
+    moveAim(dx, dy) {
+      if (this.state !== 'playing') return;
+      const inv = this.options.invert ? -1 : 1;
+      this.aim.yaw += dx;
+      this.aim.pitch = BW.clamp(this.aim.pitch - dy * inv, -AIM_MAX_PITCH, AIM_MAX_PITCH);
+      this.aimTouched = true;
+      if (this.player && !this.player.onGround) this.leashAim(this.player);
+    }
+
     lockPointer() {
-      if (this.options.mouseMode !== 'aim' || this.state !== 'playing' || document.pointerLockElement) return;
+      if (this.touchUI || this.options.mouseMode !== 'aim' || this.state !== 'playing' || document.pointerLockElement) return;
       try {
         const r = this.canvas.requestPointerLock();
         if (r && r.catch) r.catch(() => {});
@@ -267,6 +317,10 @@
       const stall = BW.PHYS.stall * p.perf.stall;
       if (p.aoa > stall * 0.85) pitch = Math.min(pitch, 0);
       if (p.V < 28) pitch = Math.min(pitch, BW.clamp((p.V - 22) / 6, 0, 1) * 0.5);
+      // Aim point below the nose: in a bank, pulling would also raise the nose (the lift has a vertical
+      // component), so limit the pull and let the nose drop to the aim first, then finish the turn.
+      const ev = Math.asin(BW.clamp(d.y, -1, 1)) - Math.asin(BW.clamp(p.f.y, -1, 1));
+      if (ev < 0) pitch = Math.min(pitch, BW.clamp(1 + ev * 6, 0, 1));
       // Beyond the bank limit don't push or pull hard: that would roll the plane over further.
       if (over > 0) pitch = BW.clamp(pitch, -0.2, 0.3);
       // Rudder does the fine sideways aiming; fades out in large turns where banking does the work.
@@ -290,7 +344,7 @@
       if (k.KeyF || k.Minus || k.NumpadSubtract || k.PageDown) thr -= 1;
       if (this.options.invert) pitch = -pitch;
 
-      if (this.options.mouseMode === 'stick') {
+      if (!this.touchUI && this.options.mouseMode === 'stick') {
         const w = this.canvas.clientWidth, h = this.canvas.clientHeight, sc = 0.28 * Math.min(w, h);
         const dz = (v) => (Math.abs(v) < 0.06 ? 0 : v - Math.sign(v) * 0.06);
         const sx = dz(BW.clamp((this.mouse.x - w / 2) / sc, -1, 1));
@@ -317,15 +371,25 @@
         this.gpPrev = { cam: btn(3), pause: btn(9) };
       }
 
-      if (this.options.mouseMode === 'aim') {
+      if (this.touchUI) {
+        const t = this.touch;
+        fire = fire || t.fire;
+        brake = brake || t.brake;
+        if (!this.aimMode()) {
+          // Virtual joystick: down = pull (like S); on the ground sideways steers with the rudder.
+          if (roll === 0) roll = t.sx;
+          if (pitch === 0) pitch = this.options.invert ? -t.sy : t.sy;
+          if (p.onGround) yaw += t.sx;
+        }
+      }
+
+      if (this.aimMode()) {
         if (!p.onGround && this.aimTouched) {
-          // Keep the aim flyable: no steep climbs when slow, no dives close to the ground.
+          // Keep the aim flyable: no steep climbs when slow. Dives are entirely up to the pilot
+          // (no automatic pull-out near the ground, only the "VYBER TO!" warning).
           const maxUp = BW.clamp((p.V - 24) / 22, 0, 1) * AIM_MAX_PITCH;
-          const predAgl = p.agl + Math.min(0, p.vel.y) * 3;
-          const maxDown = -BW.clamp((predAgl - 90) / 200, 0, 1) * AIM_MAX_PITCH;
           const k = Math.min(1, dt * 3);
           if (this.aim.pitch > maxUp) this.aim.pitch += (maxUp - this.aim.pitch) * k;
-          if (this.aim.pitch < maxDown) this.aim.pitch += (maxDown - this.aim.pitch) * k;
         }
         const ay = this.aim.yaw, ap = this.aim.pitch;
         this.aimDir.set(Math.sin(ay) * Math.cos(ap), Math.sin(ap), Math.cos(ay) * Math.cos(ap));
@@ -363,6 +427,7 @@
       $('pauseScreen').classList.add('hidden');
       $('endScreen').classList.add('hidden');
       $('loading').classList.remove('hidden');
+      if (this.touchUI) BW.enterFullscreen();
       this.audio.init();
       this.audio.setMuted(!this.options.sound);
       if (this.audio.ctx) this.audio.ctx.resume();
@@ -375,6 +440,9 @@
       this.planes = [];
       this.ais = [];
       const diff = (this.diff = BW.DIFFICULTIES[this.options.difficulty] || BW.DIFFICULTIES.normal);
+      this.mode = this.options.mode;
+      this.mission = BW.MissionModes[this.mode];
+      this.targets = [];
       const scene = (this.scene = new BABYLON.Scene(this.engine));
       scene.clearColor = new BABYLON.Color4(0.72, 0.8, 0.88, 1);
       scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
@@ -395,7 +463,7 @@
       sun.autoCalcShadowZBounds = false;
       sun.orthoLeft = -90; sun.orthoRight = 90; sun.orthoTop = 90; sun.orthoBottom = -90;
       sun.shadowMinZ = 1; sun.shadowMaxZ = 900;
-      const sg = (this.shadowGen = new BABYLON.ShadowGenerator(2048, sun));
+      const sg = (this.shadowGen = new BABYLON.ShadowGenerator(this.touchUI ? 1024 : 2048, sun));
       sg.usePercentageCloserFiltering = true;
       sg.filteringQuality = BABYLON.ShadowGenerator.QUALITY_MEDIUM;
       sg.bias = 0.002;
@@ -414,7 +482,9 @@
 
       this.world = new BW.World(scene, this);
       this.effects = new BW.Effects(this);
+      this.world.addShipSmoke(this.effects);
       this.weapons = new BW.Weapons(this);
+      this.bombs = new BW.Bombs(this);
       this.glow.addIncludedOnlyMesh(this.weapons.tracers.ally);
       this.glow.addIncludedOnlyMesh(this.weapons.tracers.enemy);
 
@@ -435,11 +505,12 @@
           pos: new V3(slots[i][0], 0, slots[i][1]), heading: 0, onGround: true, throttle: 0.08,
         });
         this.planes.push(a);
-        this.ais.push(new BW.AIPilot(a, this, Object.assign({ maxOnPlayer: 0 }, BW.ALLY_AI)));
+        this.ais.push(new BW.AIPilot(a, this, Object.assign({ maxOnPlayer: 0, groundAttack: this.mode === 'ground' }, BW.ALLY_AI)));
       }
 
       this.time = 0;
       this.missionTime = 0;
+      this.failT = 0;
       this.phase = 'runway';
       this.alliesGo = false;
       this.enemiesSpawned = false;
@@ -447,6 +518,7 @@
       this.chutes = [];
       this.playerChute = null;
       this.stats = { allyKills: 0, alliesLost: 0, enemiesTotal: diff.enemies };
+      this.mission.setup(this);
       this.endTimer = -1;
       this.camMode = this.options.cockpit ? 'cockpit' : 'chase';
       this.look.yaw = this.look.pitch = 0;
@@ -459,11 +531,18 @@
 
       this.hud.reset();
       this.hud.show(true);
+      document.body.classList.add('ingame');
+      if (this.touchCtl) this.touchCtl.show(true);
       $('loading').classList.add('hidden');
       this.state = 'playing';
       this.lockPointer();
-      this.hud.message('Přidej plyn (R / Shift) a rozjeď se po dráze.', 7);
-      this.hud.message('Nad 90 km/h přitáhni (S / šipka dolů) a vzlétni.', 7);
+      if (!this.touchUI) {
+        this.hud.message('Přidej plyn (R / Shift) a rozjeď se po dráze.', 7);
+        this.hud.message('Nad 90 km/h přitáhni (S / šipka dolů) a vzlétni.', 7);
+      } else {
+        this.hud.message('Posuň páku PLYN nahoru a rozjeď se po dráze.', 7);
+        this.hud.message(this.aimMode() ? 'Nad 90 km/h táhni prstem nahoru a vzlétni.' : 'Nad 90 km/h přitáhni joystick dolů a vzlétni.', 7);
+      }
       scene.onDisposeObservable.add(() => { this.planes = []; });
     }
 
@@ -472,7 +551,7 @@
     objectiveText() {
       switch (this.phase) {
         case 'runway': return 'Vzlétni z letiště';
-        case 'combat': return 'Sestřel nepřátelské letouny';
+        case 'combat': return this.mission.objective(this);
         case 'rtb': return 'Vrať se a přistaň na letišti';
         case 'done': return 'Mise splněna';
         default: return 'Mise selhala';
@@ -510,29 +589,18 @@
       }
       if (this.phase === 'runway' && pl.alive && !pl.onGround && pl.agl > 40) {
         this.phase = 'combat';
-        const n = diff.enemies;
-        if (diff.groups > 1) {
-          const first = Math.ceil(n / 2);
-          this.spawnEnemies(first, 0);
-          this.groupsLeft.push({ count: n - first, at: this.time + 70 });
-        } else this.spawnEnemies(n, 0);
-        this.hud.message('Nepřátelské letouny na obzoru! Na ně!', 5, 'alert');
+        this.mission.start(this);
       }
-      // Reinforcements arrive after a while or once the first group is thinned out.
-      if (this.groupsLeft.length && this.phase === 'combat') {
-        const alive = this.planes.filter((p) => p.faction === 'enemy' && p.alive).length;
-        const g = this.groupsLeft[0];
-        if (this.time > g.at || alive <= 1) {
-          this.groupsLeft.shift();
-          this.spawnEnemies(g.count, 1);
-          this.hud.message('Pozor, další nepřátelská skupina!', 5, 'alert');
-        }
+      if (this.state === 'playing' || this.state === 'ended') this.mission.update(this, dt);
+      // Planes leaving the battle area (retreating escorts and patrols, bombers flying home) disappear at its edge.
+      for (let i = this.planes.length - 1; i >= 0; i--) {
+        const p = this.planes[i];
+        const leaving = p.ai && p.alive && (p.ai.state === 'retreat' || (p.bomber && p.ai.state === 'outbound'));
+        if (leaving && Math.hypot(p.pos.x, p.pos.z) > BW.BATTLE_RADIUS - 150) this.removePlane(p);
       }
-      if (this.phase === 'combat' && this.enemiesSpawned && !this.groupsLeft.length &&
-          !this.planes.some((p) => p.faction === 'enemy' && p.alive)) {
-        this.phase = 'rtb';
-        this.hud.message('Všechna nepřátelská letadla sestřelena!', 6, 'good');
-        this.hud.message('Vrať se na letiště a přistaň.', 8);
+      if (this.failT > 0) {
+        this.failT -= dt;
+        if (this.failT <= 0) this.endMission(false, 'Bombardéry rozbombardovaly naše letiště.');
       }
       if (pl.alive && pl.onGround && BW.onAirfield(pl.pos.x, pl.pos.z) && pl.V < 1) {
         if (pl.hp < pl.maxHp && this.phase !== 'rtb') {
@@ -561,29 +629,17 @@
     }
 
     showEnd() {
-      const pl = this.player, st = this.stats;
       const t = Math.floor(this.missionTime);
       $('endTitle').textContent = this.success ? 'Mise splněna' : 'Mise selhala';
       $('endTitle').className = this.success ? 'good' : 'bad';
-      $('endReason').textContent = this.success ? 'Nepřítel byl odražen a přistál jsi na domovském letišti.' : this.failReason;
-      const acc = pl.shots ? Math.round((pl.hits / pl.shots) * 100) : 0;
+      $('endReason').textContent = this.success ? this.mission.successText : this.failReason;
       const rows = [
+        ['Mise', BW.MODES[this.mode].name],
         ['Obtížnost', this.diff.name],
         ['Čas mise', Math.floor(t / 60) + ' min ' + (t % 60) + ' s'],
-        ['Tvoje sestřely', pl.kills],
-        ['Sestřely spojenců', st.allyKills],
-        ['Ztráty spojenců', st.alliesLost + ' z ' + this.diff.allies],
-        ['Přesnost střelby', acc + ' % (' + pl.hits + ' / ' + pl.shots + ')'],
-        ['Stav letounu', pl.destroyed || !pl.alive ? 'zničen' : Math.round((Math.max(0, pl.hp) / pl.maxHp) * 100) + ' %'],
-        ['Pilot', pl.bailedOut ? 'zachránil se na padáku' : pl.alive ? 'v pořádku' : 'zahynul'],
-      ];
+      ].concat(this.mission.endRows(this));
       $('endStats').innerHTML = rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('');
-      let stars = 0;
-      if (this.success) {
-        stars = 1;
-        if (pl.kills >= Math.ceil(this.diff.enemies / 3)) stars++;
-        if (st.alliesLost === 0 && pl.hp > pl.maxHp * 0.5) stars++;
-      }
+      const stars = this.success ? this.mission.stars(this) : 0;
       $('endStars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
       $('endScreen').classList.remove('hidden');
     }
@@ -600,6 +656,50 @@
 
     enemiesLeft() {
       return this.planes.filter((p) => p.faction === 'enemy' && p.alive).length + this.pendingEnemies();
+    }
+
+    // Ground target hit by an (allied) bullet.
+    onTargetHit(t, owner, point) {
+      owner.hits++;
+      this.effects.spark(point);
+      if (Math.random() < 0.5) this.effects.dust(point, false);
+      if (owner.isPlayer) { this.hud.hitMarker(); this.audio.hit(); }
+      t.damage(BW.PHYS.bulletDamage * (owner.isPlayer ? 1.15 : 1), owner);
+    }
+
+    onTargetDestroyed(t, attacker) {
+      const st = this.stats, byPlayer = attacker && attacker.isPlayer;
+      if (t.primary) {
+        st.primaryDown++;
+        if (byPlayer) st.playerPrimary++;
+        const left = this.targets.filter((o) => o.primary && o.alive).length;
+        const rest = left ? ` Zbývá ${BW.plural(left, 'cíl', 'cíle', 'cílů')}.` : '';
+        this.hud.message((byPlayer ? `Zničil jsi ${t.name}!` : `Spojenec zničil ${t.name}.`) + rest, 4, byPlayer ? 'good' : '');
+      } else {
+        st.aaDown++;
+        if (byPlayer) st.playerAA++;
+        this.hud.message(byPlayer ? 'Umlčel jsi kulometné hnízdo!' : 'Spojenec umlčel kulometné hnízdo.', 4, byPlayer ? 'good' : '');
+      }
+    }
+
+    // A bomber got through and releases its bombs over the airfield.
+    onBomberRelease() {
+      const st = this.stats;
+      st.through++;
+      if (st.through > this.diff.allowedThrough) {
+        if (!(this.failT > 0)) this.hud.message('Bombardéry shazují pumy na naše letiště!', 5, 'alert');
+        if (this.state === 'playing' && !(this.failT > 0)) this.failT = 13; // after the bombs hit
+      } else {
+        this.hud.message('Bombardér prorazil a bombarduje letiště! Další už nesmí projít.', 6, 'alert');
+      }
+    }
+
+    removePlane(p) {
+      p.alive = false;
+      p.destroyed = true;
+      p.dispose();
+      this.planes.splice(this.planes.indexOf(p), 1);
+      if (p.ai) this.ais.splice(this.ais.indexOf(p.ai), 1);
     }
 
     onShotDown(plane, attacker) {
@@ -640,11 +740,16 @@
 
     creditKill(plane, attacker) {
       if (plane.faction === 'enemy') {
-        const left = this.enemiesLeft();
-        if (attacker && attacker.isPlayer) this.hud.message(`Sestřelil jsi nepřítele! Zbývá ${left}.`, 4, 'good');
+        const what = plane.bomber ? 'bombardér' : 'nepřítele';
+        if (plane.bomber) {
+          this.stats.bomberKills++;
+          if (attacker && attacker.isPlayer) this.stats.playerBomberKills++;
+        }
+        const note = this.mission.killNote(this, plane);
+        if (attacker && attacker.isPlayer) this.hud.message(`Sestřelil jsi ${what}!${note}`, 4, 'good');
         else {
           this.stats.allyKills++;
-          this.hud.message(`Spojenec sestřelil nepřítele. Zbývá ${left}.`, 4);
+          this.hud.message(`Spojenec sestřelil ${what}.${note}`, 4);
         }
       } else if (plane.isPlayer) {
         this.hud.message('Byl jsi sestřelen!', 5, 'alert');
@@ -665,6 +770,7 @@
         const texts = {
           ground: 'Tvůj letoun narazil do země.', water: 'Zřítil ses do vody.',
           rough: 'Přistání v terénu mimo letiště skončilo havárií.', collision: 'Srazil ses s jiným letadlem.',
+          bomb: 'Tvůj letoun na zemi zasáhla puma.',
         };
         plane.bailTimer = 0;
         if (plane.bailedOut) return; // the pilot is already hanging under the parachute
@@ -687,7 +793,8 @@
       if (!pl.alive || pl.onGround) return;
       for (const o of this.planes) {
         if (o === pl || o.destroyed || o.onGround) continue;
-        if (V3.DistanceSquared(o.pos, pl.pos) < 25) {
+        const cr = o.collideR || 5;
+        if (V3.DistanceSquared(o.pos, pl.pos) < cr * cr) {
           o.alive = false; o.crash('collision');
           pl.crash('collision');
           return;
@@ -703,6 +810,7 @@
       this.updateCamera(dt);
       this.scene.render();
       this.hud.update(dt);
+      if (this.touchCtl && this.state !== 'menu') this.touchCtl.update();
     }
 
     update(dt) {
@@ -717,6 +825,9 @@
       for (let i = 0; i < n; i++) for (const p of this.planes) p.step(h);
       for (const p of this.planes) { p.updateGuns(dt); if (!p.destroyed) p.syncMesh(dt); }
       this.weapons.update(dt);
+      this.world.update(dt);
+      for (const t of this.targets) t.update(dt);
+      this.bombs.update(dt);
       this.updateChutes(dt);
       this.effects.update(dt);
       if (this.state === 'playing') this.checkCollisions();
@@ -772,7 +883,7 @@
       p.model.pilot.setEnabled(!p.bailedOut);
       cam.fov = 1.05;
       let rot;
-      if (this.options.mouseMode === 'aim' && p.alive && this.aimTouched) {
+      if (this.aimMode() && p.alive && this.aimTouched) {
         const aimQ = Q.RotationYawPitchRoll(this.aim.yaw, -this.aim.pitch, 0);
         Q.SlerpToRef(this.camQ, aimQ, 1 - Math.exp(-dt * 8), this.camQ);
         rot = this.camQ.multiply(look);

@@ -84,6 +84,8 @@
     ctx.restore();
   }
 
+  BW.drawMarking = drawMarking;
+
   // Texture atlas regions [x0, y0, x1, y1] in canvas pixels (512 x 1024).
   const R = {
     top: [0, 0, 512, 128], bot: [0, 128, 512, 256], rud: [0, 256, 256, 384], pbot: [256, 256, 512, 384],

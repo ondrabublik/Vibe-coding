@@ -60,12 +60,27 @@
       return tA.normalize();
     }
 
+    // Area this pilot defends (escorts: around the bombers, patrols: around the depot), or null.
+    zone() {
+      const c = this.cfg;
+      if (c.escort) { const lead = c.escort(); return lead ? { pos: lead.pos, r: 1600 } : null; }
+      if (c.guard) return { pos: c.guard, r: 2300 };
+      return null;
+    }
+
     pickTarget() {
-      const p = this.p, g = this.g;
+      const p = this.p, g = this.g, c = this.cfg;
+      const zone = this.zone();
       let best = null, bestScore = Infinity;
       for (const o of g.planes) {
         if (o.faction === p.faction || !o.alive || o.onGround) continue;
         let score = V3.Distance(o.pos, p.pos);
+        // Escorts and patrols only chase intruders near what they protect (or anyone very close).
+        if (zone && score > 700 && V3.Distance(o.pos, zone.pos) > zone.r) continue;
+        // Wingmen on a ground-attack mission only fight enemy planes that come close.
+        if (c.groundAttack && score > 1300) continue;
+        // Wingmen tie up the escort fighters; the bombers are mainly the player's job.
+        if (o.bomber && p.faction === 'ally') score *= 1.8;
         if (o.isPlayer && p.faction === 'enemy') {
           let n = 0;
           for (const e of g.planes) if (e !== p && e.ai && e.alive && e.ai.target === o) n++;
@@ -110,7 +125,7 @@
 
       p.throttle = 1;
       this.retargetT -= dt;
-      if (this.retargetT <= 0 || !this.target || !this.target.alive || this.target.onGround) {
+      if (this.state !== 'retreat' && (this.retargetT <= 0 || !this.target || !this.target.alive || this.target.onGround)) {
         this.pickTarget();
         this.retargetT = 3 + Math.random() * 2;
       }
@@ -122,11 +137,15 @@
         BW.groundHeight(p.pos.x + p.vel.x * 6, p.pos.z + p.vel.z * 6)
       );
       const predicted = p.pos.y + Math.min(0, p.vel.y) * 4 - gh;
-      if (predicted < 110) {
+      // During a strafing dive the attack run handles the pull-out itself.
+      const diving = this.run && this.run.phase === 'dive' && !this.target;
+      if (predicted < 110 && !(diving && p.agl > 45)) {
+        if (this.run) this.run.phase = 'extend';
         const urgency = BW.clamp((110 - predicted) / 80, 0.3, 1.2);
         this.steer(this.levelDir(urgency), 1);
         return;
       }
+      if (this.state === 'retreat') { this.retreat(); return; }
       const r = Math.hypot(p.pos.x, p.pos.z);
       if (r > BW.BATTLE_RADIUS - 500) {
         tA.set(-p.pos.x, 0, -p.pos.z).normalize();
@@ -142,7 +161,14 @@
       }
 
       const t = this.target;
-      if (!t) { this.orbit(dt); return; }
+      if (!t) {
+        if (this.cfg.escort && this.cfg.escort()) this.formation(this.cfg.escort());
+        else if (this.cfg.groundAttack && g.targets.some((o) => o.alive)) this.attackGround(dt);
+        else if (this.cfg.guard) this.orbitAround(this.cfg.guard, 750, 420);
+        else this.orbit(dt);
+        return;
+      }
+      this.run = null;
 
       // Evasion when an enemy sits on our tail.
       if (this.evadeT > 0) {
@@ -214,6 +240,81 @@
         this.burstT += dt;
         if (this.burstT > 0.6 + Math.random() * 1.2) { this.burstT = 0; this.pauseT = 0.3 + Math.random() * 0.6; }
       } else this.burstT = 0;
+    }
+
+    // Escort: hold a slot above and beside the lead bomber, matching its speed.
+    formation(lead) {
+      const p = this.p, s = this.slot || (this.slot = { lat: (Math.random() < 0.5 ? -1 : 1) * (60 + Math.random() * 90), up: 60 + Math.random() * 80, back: 40 + Math.random() * 120 });
+      const hx = lead.f.x, hz = lead.f.z, hl = Math.hypot(hx, hz) || 1;
+      const fx = hx / hl, fz = hz / hl;
+      tB.set(lead.pos.x + fz * s.lat - fx * s.back, lead.pos.y + s.up, lead.pos.z - fx * s.lat - fz * s.back);
+      tA.copyFrom(tB).subtractInPlace(p.pos);
+      const along = tA.x * fx + tA.z * fz;
+      // Aim at a point ahead of the slot so the plane settles into it instead of circling.
+      tC.set(tB.x + fx * 250, tB.y, tB.z + fz * 250).subtractInPlace(p.pos);
+      if (tA.length() > 400) tC.copyFrom(tA);
+      tC.y *= 0.6;
+      this.steer(tC.normalize(), 0.6);
+      p.throttle = tA.length() > 400 ? 1 : BW.clamp(0.55 + along * 0.006, 0.25, 1);
+    }
+
+    orbitAround(c, radius, alt) {
+      const p = this.p;
+      const a = Math.atan2(p.pos.x - c.x, p.pos.z - c.z) + 0.4 * this.orbitDir;
+      const x = c.x + Math.sin(a) * radius, z = c.z + Math.cos(a) * radius;
+      tA.set(x, BW.groundHeight(x, z) + alt, z).subtractInPlace(p.pos);
+      tA.y *= 0.5;
+      this.steer(tA.normalize(), 0.6);
+    }
+
+    // Leave the battle area (escorts once the bombers are gone); the game removes the plane at the edge.
+    retreat() {
+      const p = this.p, e = this.exit;
+      const gh = BW.groundHeight(p.pos.x + p.vel.x * 4, p.pos.z + p.vel.z * 4);
+      tA.set(e.x - p.pos.x, 0, e.z - p.pos.z).normalize();
+      tA.y = BW.clamp((Math.max(gh + 250, 550) - p.pos.y) / 300, -0.3, 0.5);
+      this.steer(tA.normalize(), 0.7);
+    }
+
+    // Strafing runs on ground targets: climb to altitude, dive at the target firing, pull out, extend, repeat.
+    attackGround(dt) {
+      const p = this.p, g = this.g;
+      const run = this.run || (this.run = { phase: 'approach', t: 0, gt: null });
+      run.t += dt;
+      if (!run.gt || !run.gt.alive || run.t > 40) {
+        let best = null, bs = Infinity;
+        for (const o of g.targets) {
+          if (!o.alive) continue;
+          const d = V3.Distance(o.center, p.pos) * (o.kind === 'aa' ? 0.6 : 1) * (0.8 + Math.random() * 0.4);
+          if (d < bs) { bs = d; best = o; }
+        }
+        run.gt = best; run.t = 0;
+        if (!best) return this.orbit(dt);
+      }
+      const c = run.gt.center;
+      tA.copyFrom(c).subtractInPlace(p.pos);
+      const hd = Math.hypot(tA.x, tA.z), dist = tA.length();
+      const hx = tA.x / (hd || 1), hz = tA.z / (hd || 1);
+      const gy = BW.groundHeight(p.pos.x, p.pos.z);
+      if (run.phase === 'dive') {
+        const aimErr = Math.acos(BW.clamp(V3.Dot(p.f, tA) / dist, -1, 1));
+        if (p.agl + Math.min(0, p.vel.y) * 2.5 < 55 || dist < 120 || (aimErr > 0.6 && dist < 700)) {
+          run.phase = 'extend';
+          run.t = 0;
+          return this.steer(this.levelDir(0.5), 1);
+        }
+        this.steer(tA.scaleInPlace(1 / dist), 1);
+        const cone = Math.max(this.cfg.aimCone, 7 / dist);
+        if (dist < 520 && aimErr < cone) p.input.fire = true;
+        return;
+      }
+      const facing = (p.f.x * hx + p.f.z * hz) / (Math.hypot(p.f.x, p.f.z) || 1);
+      if (run.phase === 'approach' && hd < 1000 && hd > 550 && p.agl > 230 && facing > 0.85) { run.phase = 'dive'; return; }
+      if (run.phase === 'approach' && hd < 650) run.phase = 'extend';
+      if (run.phase === 'extend' && hd > 1150) run.phase = 'approach';
+      const s = run.phase === 'extend' ? -1 : 1;
+      tB.set(hx * s, BW.clamp((gy + 380 - p.pos.y) / 250, -0.25, 0.45), hz * s);
+      this.steer(tB.normalize(), 0.7);
     }
 
     orbit() {

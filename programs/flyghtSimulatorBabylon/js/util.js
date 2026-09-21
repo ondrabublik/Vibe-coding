@@ -57,24 +57,58 @@ window.BW = window.BW || {};
       enemies: 3, allies: 3, enemyHp: 60, playerHp: 160, dmgToPlayer: 0.4,
       skill: 0.5, reaction: 0.6, aimCone: 0.075, spread: 0.024, fireRange: 320,
       maxOnPlayer: 1, evade: 0.2, leadMarker: true, crashVs: -9, groups: 1,
+      bombers: 2, escorts: 2, bomberHp: 170, gunnerSpread: 0.07, allowedThrough: 1,
+      aaNests: 2, aaSpread: 0.017, aaRange: 550, patrol: 0,
     },
     normal: {
       name: 'Pilot', desc: '5 nepřátel, 3 spojenci. Vyrovnaný souboj.',
       enemies: 5, allies: 3, enemyHp: 85, playerHp: 130, dmgToPlayer: 0.65,
       skill: 0.7, reaction: 0.35, aimCone: 0.055, spread: 0.015, fireRange: 380,
       maxOnPlayer: 2, evade: 0.45, leadMarker: true, crashVs: -7.5, groups: 1,
+      bombers: 3, escorts: 3, bomberHp: 210, gunnerSpread: 0.05, allowedThrough: 1,
+      aaNests: 3, aaSpread: 0.012, aaRange: 620, patrol: 2,
     },
     hard: {
       name: 'Veterán', desc: '7 nepřátel ve dvou skupinách, 2 spojenci. Bez ukazatele předstihu.',
       enemies: 7, allies: 2, enemyHp: 105, playerHp: 110, dmgToPlayer: 0.85,
       skill: 0.8, reaction: 0.22, aimCone: 0.04, spread: 0.009, fireRange: 430,
       maxOnPlayer: 2, evade: 0.65, leadMarker: false, crashVs: -6.5, groups: 2,
+      bombers: 4, escorts: 4, bomberHp: 250, gunnerSpread: 0.036, allowedThrough: 1,
+      aaNests: 5, aaSpread: 0.01, aaRange: 680, patrol: 3,
     },
     ace: {
       name: 'Eso', desc: '9 nepřátelských es ve dvou skupinách, 2 spojenci. Soustředí se na tebe.',
       enemies: 9, allies: 2, enemyHp: 125, playerHp: 100, dmgToPlayer: 1.1,
       skill: 0.95, reaction: 0.1, aimCone: 0.03, spread: 0.006, fireRange: 480,
       maxOnPlayer: 4, evade: 1.0, leadMarker: false, crashVs: -6, groups: 2,
+      bombers: 4, escorts: 6, bomberHp: 290, gunnerSpread: 0.03, allowedThrough: 0,
+      aaNests: 6, aaSpread: 0.008, aaRange: 740, patrol: 4,
+    },
+  };
+
+  // Czech plural: n + form for 1 / 2-4 / 5+.
+  BW.plural = (n, one, few, many) => n + ' ' + (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
+
+  // Mission types. desc(d) describes a difficulty level for the menu.
+  BW.MODES = {
+    dogfight: {
+      name: 'Letecký souboj',
+      desc: 'Vzlétni se svou letkou a sestřel nepřátelské stíhačky.',
+      diffDesc: (d) => d.desc,
+    },
+    bombers: {
+      name: 'Útok na bombardéry',
+      desc: 'Těžké bombardéry Gotha s doprovodem stíhaček letí na naše letiště. Sestřel je dřív, než shodí pumy.',
+      diffDesc: (d) => `${BW.plural(d.bombers, 'bombardér', 'bombardéry', 'bombardérů')}, ` +
+        `${BW.plural(d.escorts, 'stíhač', 'stíhači', 'stíhačů')} doprovodu, ${d.allies} spojenci. ` +
+        (d.allowedThrough ? `K letišti smí proniknout nejvýš ${d.allowedThrough} bombardér.` : 'K letišti nesmí proniknout žádný bombardér.'),
+    },
+    ground: {
+      name: 'Útok na pozemní cíl',
+      desc: 'Znič nepřátelský sklad munice a paliva. Chrání ho kulometná hnízda protiletecké obrany.',
+      diffDesc: (d) => BW.plural(d.aaNests, 'kulometné hnízdo', 'kulometná hnízda', 'kulometných hnízd') +
+        (d.patrol ? `, ${d.patrol} stíhači hlídky` : ', bez stíhací hlídky') +
+        `, ${d.allies} spojenci.` + (d.leadMarker ? '' : ' Přesná palba ze země.'),
     },
   };
 

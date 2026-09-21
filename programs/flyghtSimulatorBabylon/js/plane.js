@@ -89,7 +89,7 @@
       this.stalled = false;
       this.f = new V3(); this.u = new V3(); this.r = new V3();
       this.propAngle = Math.random() * 6;
-      this.model = BW.buildBiplane(game.scene, o.scheme, this.name);
+      this.model = (o.build || BW.buildBiplane)(game.scene, o.scheme, this.name);
       this.root = this.model.root;
       if (game.shadowGen) this.model.meshes.forEach((m) => game.shadowGen.addShadowCaster(m, false));
       this.updateAxes();
@@ -175,9 +175,12 @@
         if (assisted && u.y > 0.1) {
           // With the stick released also pull the flight path back to horizontal.
           const gamma = Math.asin(BW.clamp(this.vel.y / V, -1, 1));
-          const w = BW.clamp(1 - Math.abs(c.pitch) / 0.1, 0, 1); // fades out smoothly with stick input
+          // (Not while the mouse autopilot flies: it controls the flight path itself, and pulling out
+          // of a descent would fight a deliberate dive.)
+          const w = this.mouseFlying ? 0 : BW.clamp(1 - Math.abs(c.pitch) / 0.1, 0, 1); // fades out smoothly with stick input
           const load = BW.clamp(1 - 3 * gamma * w, 0, 3);
-          const need = (load * P.mass * P.g) / (Math.max(qd, 1) * P.S * Math.max(0.5, u.y));
+          // Extra lift for banked turns only up to ~40 deg of bank: in a steep bank it would raise the nose.
+          const need = (load * P.mass * P.g) / (Math.max(qd, 1) * P.S * Math.max(0.75, u.y));
           const trim = BW.clamp(need / P.clA, 0, stall * 0.75);
           tmpC.copyFrom(u).subtractInPlace(tmpB.copyFrom(tmpA).scaleInPlace(V3.Dot(u, tmpA)));
           if (tmpC.lengthSquared() > 1e-6) {

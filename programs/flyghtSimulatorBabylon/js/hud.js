@@ -12,7 +12,7 @@
       this.el = {};
       ['hud', 'hSpeed', 'hAlt', 'hVario', 'hHdg', 'hThr', 'hThrBar', 'hHpBar', 'hHp', 'hBrake', 'enemyCount', 'allyCount',
         'killCount', 'missionTime', 'objective', 'messages', 'warnStall', 'warnBounds', 'warnLow', 'crosshair', 'lead',
-        'hitmarker', 'damageFlash', 'markers', 'stick', 'aim', 'viewName', 'instruments'].forEach((id) => (this.el[id] = $(id)));
+        'hitmarker', 'damageFlash', 'markers', 'stick', 'aim', 'viewName', 'instruments', 'enemyLabel', 'extraRow', 'extraLabel', 'extraVal'].forEach((id) => (this.el[id] = $(id)));
       this.radar = $('radar').getContext('2d');
       this.markers = [];
       this.textT = 0;
@@ -53,12 +53,12 @@
       return this.markers[i];
     }
 
-    placeMarker(i, world, kind, label, w, h) {
+    placeMarker(i, world, kind, label, w, h, noEdge) {
       const g = this.g, m = this.marker(i);
       const s = g.project(world);
       const margin = 30;
       const onScreen = s.front && s.x > margin && s.x < w - margin && s.y > margin && s.y < h - margin;
-      if (!onScreen && kind === 'ally') { m.style.display = 'none'; return; }
+      if (!onScreen && (kind === 'ally' || noEdge)) { m.style.display = 'none'; return false; }
       if (onScreen) {
         m.className = 'marker ' + kind;
         m.style.transform = `translate(${s.x}px, ${s.y}px)`;
@@ -76,6 +76,7 @@
         m.firstChild.textContent = '';
       }
       m.style.display = '';
+      return onScreen;
     }
 
     update(dt) {
@@ -119,12 +120,24 @@
 
       // Plane markers
       let mi = 0;
+      const fmt = (d) => (d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km');
       for (const o of g.planes) {
         if (o === pl || !o.alive) continue;
         const d = V3.Distance(o.pos, pl.pos);
         if (o.faction === 'ally' && d > 2500) continue;
-        const label = o.faction === 'enemy' ? (d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km') : '';
-        this.placeMarker(mi++, o.pos, o.faction === 'enemy' ? 'enemy' : 'ally', label, w, h);
+        if (o.bomber) this.placeMarker(mi++, o.pos, 'bomber', fmt(d), w, h);
+        else this.placeMarker(mi++, o.pos, o.faction === 'enemy' ? 'enemy' : 'ally', o.faction === 'enemy' ? fmt(d) : '', w, h);
+      }
+      // Ground targets: markers on screen; one edge arrow toward the depot while none is visible.
+      if (g.targets.length && g.phase === 'combat') {
+        let seen = false;
+        for (const t of g.targets) {
+          if (!t.alive) continue;
+          const d = V3.Distance(t.center, pl.pos);
+          if (t.primary) seen = this.placeMarker(mi++, t.center, 'target', d < 2500 ? t.name + ' ' + fmt(d) : '', w, h, true) || seen;
+          else if (d < 2500) this.placeMarker(mi++, t.center, 'aa', d < 1200 ? 'KULOMET' : '', w, h, true);
+        }
+        if (!seen) this.placeMarker(mi++, g.site, 'target', 'SKLAD ' + fmt(V3.Distance(g.site, pl.pos)), w, h);
       }
       if (g.phase === 'rtb' || (g.phase === 'combat' && pl.hp < pl.maxHp * 0.35)) {
         const d = Math.hypot(pl.pos.x, pl.pos.z + 100);
@@ -138,14 +151,14 @@
       el.damageFlash.style.opacity = this.flashT > 0 ? Math.min(0.6, this.flashT * 2) : 0;
 
       // Mouse stick indicator
-      if (g.options.mouseMode === 'stick' && alive) {
+      if (!g.touchUI && g.options.mouseMode === 'stick' && alive) {
         el.stick.style.display = '';
         el.stick.style.transform = `translate(${g.mouse.x}px, ${g.mouse.y}px)`;
       } else el.stick.style.display = 'none';
 
       // Mouse-aim point
       let aimShown = false;
-      if (g.options.mouseMode === 'aim' && alive && g.aimTouched) {
+      if (g.aimMode() && alive && g.aimTouched) {
         tA.copyFrom(g.aimDir).scaleInPlace(400).addInPlace(pl.pos);
         const s = g.project(tA);
         if (s.front) { aimShown = true; el.aim.style.transform = `translate(${s.x}px, ${s.y}px)`; }
@@ -173,9 +186,12 @@
         el.hHpBar.style.background = hp > 0.6 ? '#7cc36a' : hp > 0.3 ? '#e0b030' : '#e04a3a';
         el.hHp.textContent = Math.round(hp * 100) + ' %';
         el.hBrake.style.visibility = pl.input.brake ? 'visible' : 'hidden';
-        const enemies = g.planes.filter((p) => p.faction === 'enemy' && p.alive).length + g.pendingEnemies();
         const allies = g.planes.filter((p) => p.faction === 'ally' && !p.isPlayer && p.alive).length;
-        el.enemyCount.textContent = g.enemiesSpawned ? enemies : '?';
+        const st = g.mission.status(g);
+        el.enemyLabel.textContent = st.label;
+        el.enemyCount.textContent = st.value;
+        el.extraRow.style.display = st.extra ? '' : 'none';
+        if (st.extra) { el.extraLabel.textContent = st.extra[0]; el.extraVal.textContent = st.extra[1]; }
         el.allyCount.textContent = allies;
         el.killCount.textContent = pl.kills;
         const t = Math.floor(g.missionTime);
@@ -213,11 +229,20 @@
       // North marker
       c.fillStyle = '#e8e2c8'; c.font = 'bold 12px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillText('S', cx + -sh * (R - 9), cy - ch * (R - 9));
+      // Ground targets: squares (depot yellow, machine-gun nests red)
+      for (const t of g.targets) {
+        if (!t.alive) continue;
+        const [x, y, edge] = toR(t.center.x, t.center.z);
+        if (edge && !t.primary) continue;
+        c.fillStyle = t.primary ? '#ffb040' : '#ff5040';
+        const r = t.primary ? 3 : 2;
+        c.fillRect(x - r, y - r, r * 2, r * 2);
+      }
       for (const o of g.planes) {
         if (o === pl || !o.alive) continue;
         const [x, y, edge] = toR(o.pos.x, o.pos.z);
-        c.fillStyle = o.faction === 'enemy' ? '#ff5040' : '#6ab8ff';
-        c.beginPath(); c.arc(x, y, edge ? 2.5 : 3.5, 0, Math.PI * 2); c.fill();
+        c.fillStyle = o.bomber ? '#ffaa28' : o.faction === 'enemy' ? '#ff5040' : '#6ab8ff';
+        c.beginPath(); c.arc(x, y, (edge ? 2.5 : 3.5) * (o.bomber ? 1.5 : 1), 0, Math.PI * 2); c.fill();
         if (!edge && o.faction === 'enemy') {
           const dh = o.pos.y - pl.pos.y;
           if (Math.abs(dh) > 100) { c.font = '10px sans-serif'; c.fillText(dh > 0 ? '▲' : '▼', x + 8, y); }

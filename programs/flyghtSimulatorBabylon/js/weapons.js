@@ -46,22 +46,32 @@
     }
 
     fire(plane, side) {
+      plane.localToWorld(BW.MUZZLES[side], tB);
+      this.fireFrom(plane, tB, plane.f, plane.gunSpread || 0.004, plane.vel);
+    }
+
+    // Generic shot (also used by bomber gunners and anti-aircraft machine guns).
+    // owner needs pos, faction and hit/kill counters; baseVel is the gun's own velocity (or null).
+    fireFrom(owner, pos, dir, spread, baseVel) {
       if (this.bullets.length >= MAX_BULLETS) return;
       const b = this.pool.pop() || { pos: new V3(), prev: new V3(), vel: new V3() };
-      plane.localToWorld(BW.MUZZLES[side], b.pos);
+      b.pos.copyFrom(pos);
       b.prev.copyFrom(b.pos);
-      const spread = plane.gunSpread || 0.004;
-      tA.copyFrom(plane.f);
-      plane.r.scaleAndAddToRef((Math.random() - 0.5) * 2 * spread, tA);
-      plane.u.scaleAndAddToRef((Math.random() - 0.5) * 2 * spread, tA);
+      // Random cone around dir: two axes perpendicular to it.
+      const ax = Math.abs(dir.y) < 0.9 ? V3.UpReadOnly : V3.RightReadOnly;
+      V3.CrossToRef(dir, ax, tC).normalize();
+      tA.copyFrom(dir);
+      tC.scaleAndAddToRef((Math.random() - 0.5) * 2 * spread, tA);
+      V3.CrossToRef(dir, tC, tC);
+      tC.scaleAndAddToRef((Math.random() - 0.5) * 2 * spread, tA);
       tA.normalize();
-      b.vel.copyFrom(plane.vel);
+      if (baseVel) b.vel.copyFrom(baseVel); else b.vel.setAll(0);
       tA.scaleAndAddToRef(P().bulletSpeed, b.vel);
       b.life = P().bulletLife;
-      b.owner = plane;
-      b.faction = plane.faction;
+      b.owner = owner;
+      b.faction = owner.faction;
       this.bullets.push(b);
-      this.game.audio.gun(plane);
+      this.game.audio.gun(owner);
     }
 
     update(dt) {
@@ -83,13 +93,14 @@
             const len2 = tA.lengthSquared();
             const t = BW.clamp(V3.Dot(tB, tA) / (len2 || 1), 0, 1);
             tA.scaleToRef(t, tC).subtractInPlace(tB);
-            if (tC.lengthSquared() > 36) continue;
+            const hr = p.hitR || 6;
+            if (tC.lengthSquared() > hr * hr) continue;
             // Narrow phase in plane local space
             Q.InverseToRef(p.q, invQ);
             b.prev.subtractToRef(p.pos, tA).applyRotationQuaternionInPlace(invQ);
             b.pos.subtractToRef(p.pos, tB).applyRotationQuaternionInPlace(invQ);
             let hitT = -1;
-            for (const hb of BW.HITBOXES) {
+            for (const hb of p.hitboxes || BW.HITBOXES) {
               const ht = segAABB(tA, tB, hb.min, hb.max);
               if (ht >= 0 && (hitT < 0 || ht < hitT)) hitT = ht;
             }
@@ -101,6 +112,8 @@
             }
           }
         }
+        // Ground targets (only allied bullets can hit them).
+        if (!dead && b.faction === 'ally' && this.game.targets.length) dead = this.hitTargets(b);
         if (!dead) {
           const gy = BW.groundHeight(b.pos.x, b.pos.z);
           if (b.pos.y < gy) {
@@ -116,6 +129,22 @@
         }
       }
       this.render();
+    }
+
+    hitTargets(b) {
+      for (const t of this.game.targets) {
+        if (!t.alive) continue;
+        const c = t.center;
+        // Broad phase: both ends far away in the same direction.
+        if ((b.pos.x < c.x - t.radius && b.prev.x < c.x - t.radius) || (b.pos.x > c.x + t.radius && b.prev.x > c.x + t.radius) ||
+            (b.pos.z < c.z - t.radius && b.prev.z < c.z - t.radius) || (b.pos.z > c.z + t.radius && b.prev.z > c.z + t.radius)) continue;
+        const ht = segAABB(b.prev, b.pos, t.min, t.max);
+        if (ht >= 0) {
+          this.game.onTargetHit(t, b.owner, V3.Lerp(b.prev, b.pos, ht));
+          return true;
+        }
+      }
+      return false;
     }
 
     render() {
@@ -223,6 +252,10 @@
       const ps = new BABYLON.ParticleSystem('ps', cap, this.scene);
       ps.particleTexture = this.puffTex;
       ps.emitter = emitter;
+      // dispose() (also the automatic one after disposeOnStop) would dispose the texture too by default,
+      // but it is shared by all effects: keep it alive.
+      const dispose = ps.dispose.bind(ps);
+      ps.dispose = () => dispose(false);
       return ps;
     }
 
