@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dvouplošníky – letecká bitva</title>
+    <link rel="stylesheet" href="./style.css?v=15" />
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs@7/babylon.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-materials@7/babylonjs.materials.min.js"></script>
+  </head>
+  <body>
+    <canvas id="renderCanvas"></canvas>
+
+    <div id="hud" class="hidden">
+      <div id="markers"></div>
+      <div id="crosshair"></div>
+      <div id="lead"></div>
+      <div id="stick"></div>
+      <div id="aim"></div>
+      <div id="hitmarker">✕</div>
+      <div id="damageFlash"></div>
+
+      <div id="status" class="panel">
+        <div id="objective"></div>
+        <div class="row"><span>Nepřátelé</span><b id="enemyCount">?</b></div>
+        <div class="row"><span>Spojenci</span><b id="allyCount">0</b></div>
+        <div class="row"><span>Tvoje sestřely</span><b id="killCount">0</b></div>
+        <div class="row"><span>Čas</span><b id="missionTime">0:00</b></div>
+      </div>
+
+      <div id="messages"></div>
+      <div id="warnings">
+        <div id="warnStall" style="display: none">PŘETAŽENÍ – POVOL VÝŠKOVKU</div>
+        <div id="warnLow" style="display: none">VYBER TO!</div>
+        <div id="warnBounds" style="display: none">OPOUŠTÍŠ BOJOVOU OBLAST</div>
+      </div>
+
+      <div id="instruments" class="panel">
+        <div class="inst"><label>Rychlost</label><b id="hSpeed">0</b><small>km/h</small></div>
+        <div class="inst"><label>Výška</label><b id="hAlt">0</b><small>m</small></div>
+        <div class="inst"><label>Stoupání</label><b id="hVario">0</b><small>m/s</small></div>
+        <div class="inst"><label>Kurz</label><b id="hHdg">000°</b></div>
+        <div class="bar"><label>Plyn <span id="hThr">0 %</span></label><div class="track"><div id="hThrBar"></div></div></div>
+        <div class="bar"><label>Stav letounu <span id="hHp">100 %</span></label><div class="track"><div id="hHpBar"></div></div></div>
+        <div id="hBrake">BRZDY</div>
+      </div>
+
+      <canvas id="radar" width="200" height="200"></canvas>
+      <div id="viewHint">Pohled: <span id="viewName"></span> · C přepnout · P pauza · Kolečko = plyn · Náboje ∞</div>
+    </div>
+
+    <div id="loading" class="screen hidden">
+      <div class="box"><h1>Dvouplošníky</h1><p id="loadingText">Připravuji bojiště…</p></div>
+    </div>
+
+    <div id="menu" class="screen">
+      <div class="box wide">
+        <h1>Dvouplošníky</h1>
+        <p class="sub">Letecká bitva nad západní frontou, 1917. Vzlétni se svou letkou z polního letiště, sestřel nepřátelské dvouplošníky a přistaň zpět na letišti.</p>
+        <h3>Obtížnost</h3>
+        <div id="diffList"></div>
+        <h3>Nastavení</h3>
+        <div class="opts">
+          <label>Myš:
+            <select id="optMouseMode">
+              <option value="aim">míření – letadlo letí, kam ukazuješ</option>
+              <option value="stick">knipl – poloha kurzoru = výchylka</option>
+              <option value="off">vypnuto</option>
+            </select>
+          </label>
+          <label><input type="checkbox" id="optInvert" /> Obrátit výškovku (↑ = nos nahoru)</label>
+          <label><input type="checkbox" id="optCockpit" /> Začít v kokpitu</label>
+          <label><input type="checkbox" id="optSound" /> Zvuk</label>
+        </div>
+        <button id="startBtn" class="big">VZLÉTNOUT</button>
+        <details>
+          <summary>Ovládání</summary>
+          <table class="keys">
+            <tr><td>W / S, šipky ↑ ↓</td><td>výškovka (W = nos dolů, S = přitáhnout)</td></tr>
+            <tr><td>A / D, šipky ← →</td><td>křidélka – náklon</td></tr>
+            <tr><td>Q / E</td><td>směrovka (na zemi řízení)</td></tr>
+            <tr><td>R nebo Shift / F, kolečko myši</td><td>přidat / ubrat plyn (kolečko nahoru = více plynu)</td></tr>
+            <tr><td>Mezerník, levé tlačítko myši</td><td>kulomety (nekonečná munice)</td></tr>
+            <tr><td>B</td><td>brzdy</td></tr>
+            <tr><td>C</td><td>pohled za letadlem / kokpit</td></tr>
+            <tr><td>X (držet), pravé tlačítko myši</td><td>ohlédnutí dozadu / rozhlížení</td></tr>
+            <tr><td>P / Esc, M</td><td>pauza (Esc uvolní i myš), zvuk</td></tr>
+            <tr><td>Myš – míření (výchozí)</td><td>pohybem myši určuješ směr, letadlo tam samo zatočí; levé tlačítko = střelba. Klávesy mají přednost.</td></tr>
+            <tr><td>Myš – knipl</td><td>poloha kurzoru od středu = výchylka kniplu, levé tlačítko = střelba</td></tr>
+            <tr><td>Gamepad</td><td>levá páčka knipl, pravá směrovka a plyn, RT střelba, B brzdy, Y pohled</td></tr>
+          </table>
+          <p class="tip">Start: plný plyn, W zvedne ocas, nad ~90 km/h přitáhni. Po puštění ovládání se letadlo samo vyrovná do vodorovného letu. Přetažení (příliš pomalu a prudce) vede k pádu – povol výškovku a nabírej rychlost. Přistání: na letišti s malou klesavostí (do ~5 m/s), bez náklonu, pak B a zastavit. Zastavením na letišti během boje necháš letoun opravit.</p>
+        </details>
+      </div>
+    </div>
+
+    <div id="pauseScreen" class="screen hidden">
+      <div class="box">
+        <h1>Pauza</h1>
+        <button id="resumeBtn" class="big">POKRAČOVAT</button>
+        <button id="restartBtn">Začít misi znovu</button>
+        <button id="pauseMenuBtn">Hlavní menu</button>
+      </div>
+    </div>
+
+    <div id="endScreen" class="screen hidden">
+      <div class="box">
+        <h1 id="endTitle"></h1>
+        <div id="endStars"></div>
+        <p id="endReason"></p>
+        <table id="endStats" class="keys"></table>
+        <button id="againBtn" class="big">HRÁT ZNOVU</button>
+        <button id="endMenuBtn">Hlavní menu</button>
+      </div>
+    </div>
+
+    <script>
+      if (!window.BABYLON) {
+        document.getElementById('menu').classList.add('hidden');
+        document.getElementById('loading').classList.remove('hidden');
+        document.getElementById('loadingText').textContent = 'Nepodařilo se načíst Babylon.js – hra potřebuje připojení k internetu.';
+      }
+    </script>
+    <script src="./js/util.js?v=15"></script>
+    <script src="./js/plane.js?v=15"></script>
+    <script src="./js/model.js?v=15"></script>
+    <script src="./js/pilot.js?v=15"></script>
+    <script src="./js/world.js?v=15"></script>
+    <script src="./js/weapons.js?v=15"></script>
+    <script src="./js/ai.js?v=15"></script>
+    <script src="./js/audio.js?v=15"></script>
+    <script src="./js/hud.js?v=15"></script>
+    <script src="./js/game.js?v=15"></script>
+  </body>
+</html>
