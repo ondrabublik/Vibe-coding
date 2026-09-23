@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Glóbus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="viewport">
+      <div id="labels"></div>
+    </div>
+
+    <aside id="panel">
+      <header>
+        <h1>Glóbus</h1>
+        <button id="panelToggle" title="Skrýt / zobrazit panel">⟨</button>
+      </header>
+      <div id="panelBody">
+        <section>
+          <h2>Podklad</h2>
+          <div id="surfaceList"></div>
+          <div id="surfaceOptions"></div>
+          <div id="surfaceInfo"></div>
+          <div id="legend"></div>
+        </section>
+        <section>
+          <h2>Vrstvy</h2>
+          <div id="overlayList"></div>
+        </section>
+        <section>
+          <h2>Zobrazení</h2>
+          <div id="settings"></div>
+          <div class="buttons">
+            <button id="btnReset">Výchozí pohled</button>
+            <button id="btnShot">Snímek PNG</button>
+          </div>
+        </section>
+        <p class="hint">Táhni myší = otáčení · kolečko = přiblížení · dvojklik = přeletět na místo</p>
+      </div>
+    </aside>
+
+    <div id="loading" class="hidden"><span class="spinner"></span><span id="loadingText">Načítám…</span></div>
+    <div id="error" class="hidden"></div>
+
+    <div id="status">
+      <div id="coords">—</div>
+      <div id="describe"></div>
+    </div>
+    <div id="attribution"></div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+          "d3-geo": "https://cdn.jsdelivr.net/npm/d3-geo@3.1.1/+esm",
+          "topojson-client": "https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/+esm"
+        }
+      }
+    </script>
+    <script type="module" src="./js/main.js"></script>
+  </body>
+</html>
