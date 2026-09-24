@@ -21,6 +21,3 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
-# local-only simulation results (not published)
-programs/simStand2D/
-programs/simStand3D/
