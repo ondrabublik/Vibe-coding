@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tsunami na sféře</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <aside id="panel">
+    <header>
+      <h1>Tsunami na sféře</h1>
+      <p class="sub">Metoda konečných objemů na šestiúhelníkové síti</p>
+    </header>
+
+    <section>
+      <h2>Zdroj vlny</h2>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-src="eq">Zemětřesení</button>
+        <button class="tab" data-src="impact">Dopad planetky</button>
+      </div>
+
+      <div id="srcEq" class="srcbox">
+        <label>Scénář <select id="eqPreset"></select></label>
+        <div class="grid2">
+          <label>Šířka [°] <input id="eqLat" type="number" step="0.1"></label>
+          <label>Délka [°] <input id="eqLon" type="number" step="0.1"></label>
+          <label>Magnituda Mw <input id="eqMw" type="number" step="0.1" min="6.5" max="9.8"></label>
+          <label>Směr zlomu [°] <input id="eqStrike" type="number" step="1"></label>
+          <label>Délka zlomu [km] <input id="eqL" type="number" step="10" min="10"></label>
+          <label>Šířka zlomu [km] <input id="eqW" type="number" step="10" min="5"></label>
+          <label>Sklon [°] <input id="eqDip" type="number" step="1" min="5" max="60"></label>
+          <label class="btnlabel"><button id="eqScale" type="button" title="Délka a šířka zlomu podle Strassera et al. (2010)">L, W z Mw</button></label>
+        </div>
+      </div>
+
+      <div id="srcImpact" class="srcbox hidden">
+        <label>Scénář <select id="imPreset"></select></label>
+        <div class="grid2">
+          <label>Šířka [°] <input id="imLat" type="number" step="0.1"></label>
+          <label>Délka [°] <input id="imLon" type="number" step="0.1"></label>
+          <label>Průměr tělesa [m] <input id="imD" type="number" step="10" min="10"></label>
+          <label>Rychlost [km/s] <input id="imV" type="number" step="0.5" min="5" max="72"></label>
+          <label>Hustota [kg/m³] <input id="imRho" type="number" step="100" min="500"></label>
+        </div>
+      </div>
+      <p id="srcInfo" class="info"></p>
+      <label class="check"><input id="clickPlace" type="checkbox" checked> Kliknutím do mapy umístit zdroj</label>
+      <p class="hint">Shift + klik přidá mareograf (časový průběh hladiny).</p>
+    </section>
+
+    <section>
+      <h2>Simulace</h2>
+      <div class="row">
+        <button id="btnRun" class="primary">▶ Spustit</button>
+        <button id="btnStep" title="Jeden časový krok">Krok</button>
+        <button id="btnReset" title="Vrátit na počáteční stav">Reset</button>
+      </div>
+      <div class="grid2">
+        <label>Rychlost
+          <select id="speed">
+            <option value="60">1 min / s</option>
+            <option value="300">5 min / s</option>
+            <option value="900" selected>15 min / s</option>
+            <option value="1800">30 min / s</option>
+            <option value="3600">1 h / s</option>
+            <option value="Infinity">maximum</option>
+          </select>
+        </label>
+        <label>Konec [h] <input id="tEnd" type="number" value="24" min="1" max="72" step="1"></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Model</h2>
+      <label class="radio"><input type="radio" name="model" value="linear" checked><span>Lineární mělká voda = vlnová rovnice <small>C-grid, rychlý, bez numerického tlumení</small></span></label>
+      <label class="radio"><input type="radio" name="model" value="nonlinear"><span>Nelineární rovnice mělké vody <small>Godunov, MUSCL, Coriolis, tření dna; pomalejší, síť nejvýš n = 256</small></span></label>
+      <div class="grid2">
+        <label class="check"><input id="coriolis" type="checkbox" checked> Coriolis</label>
+        <label class="check"><input id="friction" type="checkbox" checked> Tření dna</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Síť</h2>
+      <label>Zahuštění (frekvence n)
+        <select id="meshN">
+          <option value="16">16 — 2 562 buněk (~480 km)</option>
+          <option value="32">32 — 10 242 buněk (~240 km)</option>
+          <option value="48">48 — 23 042 buněk (~160 km)</option>
+          <option value="64">64 — 40 962 buněk (~120 km)</option>
+          <option value="96">96 — 92 162 buněk (~80 km)</option>
+          <option value="128" selected>128 — 163 842 buněk (~60 km)</option>
+          <option value="192">192 — 368 642 buněk (~40 km)</option>
+          <option value="256">256 — 655 362 buněk (~30 km)</option>
+          <option value="320">320 — 1 024 002 buněk (~24 km)</option>
+          <option value="384">384 — 1 474 562 buněk (~20 km)</option>
+          <option value="448">448 — 2 007 042 buněk (~17 km)</option>
+          <option value="512">512 — 2 621 442 buněk (~15 km)</option>
+        </select>
+      </label>
+      <div class="grid2">
+        <label>Lloydovy iterace <input id="lloyd" type="number" value="3" min="0" max="30"></label>
+        <label>Min. hloubka [m] <input id="minDepth" type="number" value="10" min="1" max="200"></label>
+      </div>
+      <button id="btnMesh">Vytvořit síť</button>
+      <p id="meshInfo" class="info"></p>
+    </section>
+
+    <section>
+      <h2>Zobrazení</h2>
+      <div class="tabs">
+        <button class="tab active" data-view="globe">Glóbus</button>
+        <button class="tab" data-view="map">Mapa</button>
+      </div>
+      <label>Veličina
+        <select id="field">
+          <option value="0">Hladina η</option>
+          <option value="1">Maximální amplituda</option>
+          <option value="2">Čas příchodu vlny</option>
+        </select>
+      </label>
+      <div class="grid2">
+        <label>Rozsah barev [m] <input id="range" type="number" step="0.05" min="0.001"></label>
+        <label class="check"><input id="autoRange" type="checkbox" checked> automaticky</label>
+        <label>Buňky
+          <select id="cellMode">
+            <option value="hex">šestiúhelníky</option>
+            <option value="smooth">hladce</option>
+          </select>
+        </label>
+        <label>Práh příchodu [cm] <input id="arrThr" type="number" value="1" min="0.1" step="0.5"></label>
+      </div>
+      <div class="grid2">
+        <label class="check"><input id="showMesh" type="checkbox"> Hrany sítě</label>
+        <label class="check"><input id="showCoast" type="checkbox" checked> Pobřeží</label>
+      </div>
+    </section>
+
+    <section id="gaugeSection">
+      <h2>Mareografy</h2>
+      <ul id="gaugeList"></ul>
+      <p class="hint" id="gaugeHint">Zatím žádné — přidejte Shift + klikem na oceán.</p>
+    </section>
+
+    <footer>
+      <button id="btnHelp">O metodě</button>
+      <span class="credit">Reliéf: ETOPO1 (NOAA NCEI) · Pobřeží: Natural Earth</span>
+    </footer>
+  </aside>
+
+  <main id="stage">
+    <canvas id="gl"></canvas>
+    <button id="togglePanel" title="Panel">☰</button>
+    <div id="hud"></div>
+    <div id="readout"></div>
+    <div id="legend"><div id="legendBar"></div><div id="legendLabels"></div><div id="legendTitle"></div></div>
+    <div id="zoomBtns"><button id="zoomIn">+</button><button id="zoomOut">−</button></div>
+    <div id="chartBox" class="hidden"><canvas id="chart"></canvas></div>
+    <div id="flash" class="hidden"></div>
+    <div id="busy" class="hidden"><div class="spinner"></div><span id="busyText">Počítám…</span></div>
+  </main>
+
+  <div id="help" class="hidden">
+    <div class="helpCard">
+      <button id="helpClose" class="close">×</button>
+      <h2>Jak simulace funguje</h2>
+      <h3>Síť</h3>
+      <p>Každá z 20 stěn ikosaedru se rozdělí na n × n trojúhelníků po hlavních kružnicích a promítne na sféru.
+        Kontrolními objemy jsou Voronoiovy buňky kolem vrcholů — šestiúhelníky, jen ve 12 vrcholech ikosaedru
+        pětiúhelníky (plochu koule nelze pokrýt samými šestiúhelníky, plyne to z Eulerovy charakteristiky).
+        Počet buněk je 10n² + 2, zvyšováním n se síť rovnoměrně zahušťuje. Lloydovy iterace posouvají
+        středy buněk do jejich těžišť (centroidální Voronoiova teselace).</p>
+      <h3>Rovnice</h3>
+      <p><b>Lineární model</b> řeší linearizované rovnice mělké vody
+        ∂η/∂t + ∇·(H u) = 0, ∂u/∂t + g∇η = 0, což je vlnová rovnice ∂²η/∂t² = ∇·(gH∇η) zapsaná jako
+        soustava prvního řádu. Metoda konečných objemů na posunuté síti (C-grid): η je průměr přes buňku,
+        normálová rychlost leží na stěnách buněk. Objem vody se zachovává přesně, časové schéma dopředu-dozadu
+        netlumí vlnu. Časový krok plyne z Gershgorinova odhadu největšího vlastního čísla diskrétního operátoru.</p>
+      <p><b>Nelineární model</b> řeší plné rovnice mělké vody pro hloubku h a hybnost h<b>v</b> (3D kartézský vektor
+        držený v tečné rovině koule). Godunovovo schéma: Rusanovův tok, MUSCL rekonstrukce hladiny a rychlosti
+        s Venkatakrishnanovým limiterem, hydrostatická rekonstrukce (klidová hladina nad reálným dnem zůstane
+        přesně v klidu), Runge-Kutta 2. řádu, Coriolisova síla a Manningovo tření. Na hrubé síti je znatelně
+        disipativnější než lineární model — vyplatí se n ≥ 96.</p>
+      <p>Pevnina tvoří nepropustné stěny. Disperze (Boussinesq) ani zaplavování pobřeží modelovány nejsou.</p>
+      <h3>Zdroje</h3>
+      <p><b>Zemětřesení:</b> skalární moment M₀ = 10^(1,5 Mw + 9,1) N·m, skluz D = M₀ / (μ L W), μ = 40 GPa.
+        Počáteční zdvih hladiny je parametrický tvar podobný Okadovu řešení pro přesmyk: zdvih nad mělkou částí
+        zlomu, pokles za ním (zlom se sklání vpravo od směru zlomu).</p>
+      <p><b>Dopad:</b> průměr přechodného kráteru podle Schmidt-Holsappleova škálování pro vodu,
+        tvar dutiny podle Warda a Asphaug (2000) η = D (r²/R² − 1) do r = √2 R (nulový objem), hloubka omezená
+        hloubkou oceánu. Dutinu menší než buňka síť nerozliší — pak se rozprostře na ~1,5 buňky při zachování
+        potenciální energie.</p>
+      <h3>Ovládání</h3>
+      <p>Tažení myší otáčí glóbem / posouvá mapu, kolečko zoomuje. Klik do oceánu přesune zdroj,
+        Shift + klik přidá mareograf. Najetí myší ukáže hloubku a hladinu v buňce.</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <script src="data/etopo.js"></script>
+  <script src="js/mesh.js"></script>
+  <script src="js/bathy.js"></script>
+  <script src="js/solver.js"></script>
+  <script src="js/sources.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
