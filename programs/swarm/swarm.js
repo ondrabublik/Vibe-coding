@@ -1022,27 +1022,32 @@ function drawFalcon(g, p) {
   const f = Math.sin(p.flap * 1.4);
   const span = (stoop ? 17 : 32) * (0.6 + 0.4 * Math.abs(f));
   const back = stoop ? -18 : -6 - f * 4;
+  // one closed silhouette: beak → head → wing → tail → wing → head
+  g.beginPath();
+  g.moveTo(17.5, 0);
+  g.quadraticCurveTo(16, -3.6, 11, -4.2);                       // head
+  g.quadraticCurveTo(8, -3.6, 5, -3.6);                          // neck → shoulder
+  g.quadraticCurveTo(4, -span * 0.55, back, -span);              // leading edge
+  g.quadraticCurveTo(-3, -span * 0.45, -8, -3.6);                // trailing edge
+  g.lineTo(-11, -3);
+  g.lineTo(-22, -6);                                             // tail
+  g.quadraticCurveTo(-24.5, 0, -22, 6);
+  g.lineTo(-11, 3);
+  g.lineTo(-8, 3.6);
+  g.quadraticCurveTo(-3, span * 0.45, back, span);               // trailing edge
+  g.quadraticCurveTo(4, span * 0.55, 5, 3.6);                    // leading edge
+  g.quadraticCurveTo(8, 3.6, 11, 4.2);
+  g.quadraticCurveTo(16, 3.6, 17.5, 0);
+  g.closePath();
+  // rim light first, fill on top keeps only the outer edge
+  g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(255,170,120,0.5)';
+  g.lineWidth = 2;
+  g.stroke();
   g.fillStyle = '#150914';
-  g.strokeStyle = 'rgba(255,170,120,0.45)';
-  g.lineWidth = 1;
-  g.beginPath();
-  // wings
-  for (const sg of [1, -1]) {
-    g.moveTo(6, 2 * sg);
-    g.quadraticCurveTo(4, span * 0.55 * sg, back, span * sg);
-    g.quadraticCurveTo(-4, span * 0.45 * sg, -7, 3 * sg);
-    g.closePath();
-  }
-  g.fill(); g.stroke();
-  g.beginPath();
-  // tail
-  g.moveTo(-8, -3); g.lineTo(-22, -6); g.quadraticCurveTo(-24, 0, -22, 6); g.lineTo(-8, 3);
-  // body
-  g.ellipse(0, 0, 12, 4.2, 0, 0, TAU);
-  g.moveTo(15, 0); g.arc(10.5, 0, 4.5, 0, TAU);
-  g.fill(); g.stroke();
+  g.fill();
   g.fillStyle = '#e9b44c';
-  g.beginPath(); g.moveTo(14.5, -1.4); g.lineTo(18, 0); g.lineTo(14.5, 1.4); g.fill();
+  g.beginPath(); g.moveTo(16.3, -1.2); g.lineTo(19.5, 0); g.lineTo(16.3, 1.2); g.closePath(); g.fill();
   g.restore();
 }
 
