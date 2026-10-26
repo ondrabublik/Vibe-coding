@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0d1410">
+  <title>Rybník – rybářský simulátor</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="moneyWrap"><span class="coin"></span><span id="money">0 Kč</span></div>
+    <div id="fps"></div>
+    <div id="tokens"><span class="tok"></span><span id="tokenCount">0</span> žetonů</div>
+    <div id="questBox"></div>
+    <div id="bossBar"><div id="bossName"></div><div class="bar"><div id="bossFill"></div></div></div>
+    <div id="stylePops"></div>
+    <div id="toasts"></div>
+    <div id="hint"></div>
+    <div id="crosshair"></div>
+    <div id="prompt"></div>
+    <div id="status"></div>
+    <div id="castMeter"><div class="lbl" id="castLbl">Síla hodu</div><div class="bar"><div id="castFill"></div></div></div>
+    <div id="fightBox">
+      <div class="lbl">Napětí vlasce</div>
+      <div class="bar tension"><div id="tensionFill"></div><div id="dragMark" title="brzda"></div></div>
+      <div class="lbl">Síla ryby</div>
+      <div class="bar stamina"><div id="staminaFill"></div></div>
+      <div id="fightInfo"></div>
+    </div>
+    <div id="gearBox"></div>
+    <div id="keys">[Tab] výbava · [J] deník · [H] nápověda · [F] zakrmit</div>
+    <div id="tvKeys"><span><i class="kr"></i>navíjení</span><span><i class="kg"></i>zakrmit</span><span><i class="ky"></i>výbava</span><span><i class="kb"></i>menu</span><span><b>OK</b> akce · <b>CH ▲▼</b> hloubka / brzda · <b>1–5</b> rychlost</span></div>
+  </div>
+
+  <!-- Dotykové ovládání (jen na mobilu) -->
+  <div id="touchUI">
+    <div id="lookZone"></div>
+    <div id="moveZone"><div id="stick"><div id="stickKnob"></div></div></div>
+    <button id="btnMenu" class="tbtn" aria-label="Menu">☰</button>
+    <div id="wheelLbl">Hloubka</div>
+    <button id="btnMinus" class="tbtn">−</button>
+    <button id="btnPlus" class="tbtn">+</button>
+    <button id="btnSpeed" class="tbtn">Rychlost 3</button>
+    <button id="btnReel" class="tbtn">Navíjet</button>
+    <button id="btnAction" class="tbtn">Nahodit</button>
+  </div>
+  <div id="rotate"><div>Otoč telefon na šířku ↻</div></div>
+
+  <div id="tooltip"></div>
+
+  <!-- Obchod -->
+  <div id="shopPanel" class="side">
+    <div class="shopHead">
+      <div class="vendor">
+        <div class="avatar">🎣</div>
+        <div><b>Pan Vávra</b><div id="vendorLine"></div></div>
+      </div>
+      <div class="shopMoney">Peníze: <b id="shopMoney"></b></div>
+    </div>
+    <div id="shopTabs"></div>
+    <div id="shopList"></div>
+    <div class="shopFoot"><span id="shopHelp">Najeď myší na zboží ve stánku a klikni na něj.</span><button id="shopClose">Odejít [E]</button></div>
+  </div>
+
+  <!-- Výbava -->
+  <div id="gearPanel" class="overlay">
+    <div class="win">
+      <div class="winHead"><h2>Výbava</h2><button data-close>✕</button></div>
+      <p class="sub">Klikni na položku, kterou chceš nasadit. Návnada = plavaná se splávkem, umělá nástraha = přívlač.</p>
+      <div id="gearList"></div>
+    </div>
+  </div>
+
+  <!-- Deník -->
+  <div id="journalPanel" class="overlay">
+    <div class="win wide">
+      <div class="winHead"><h2>Rybářský deník</h2><button data-close>✕</button></div>
+      <p class="sub" id="journalStats"></p>
+      <div id="journalList"></div>
+    </div>
+  </div>
+
+  <!-- Nápověda -->
+  <div id="helpPanel" class="overlay">
+    <div class="win">
+      <div class="winHead"><h2>Ovládání a rady</h2><button data-close>✕</button></div>
+      <div class="help">
+        <div class="dev-touch">
+          <h4>Ovládání na mobilu</h4>
+          <p><b>Levým palcem</b> (kdekoli v levé dolní části) chodíš, <b>tažením prstu</b> po obrazovce se rozhlížíš. Tlačítko <b>Nahodit / Zásek / Vést prut</b> funguje jako levé tlačítko myši: drž = síla hodu, tažení po něm = míření a vedení prutu, ťuknutí = zásek. <b>Navíjet</b> drž pro navíjení, <b>− / +</b> mění hloubku nebo brzdu, <b>Rychlost</b> přepíná rychlost navíjení. Menu <b>☰</b> má výbavu, deník, nápovědu a krmení. U stánku ťukni na nápis <b>Nakoupit</b>.</p>
+        </div>
+        <div class="dev-tv">
+          <h4>Ovládání ovladačem televize</h4>
+          <p><b>←→</b> otáčení, <b>↑↓</b> chůze. <b>OK</b>: drž = síla hodu (šipkami míříš), pusť = nahodit, stisk při záběru = zásek. Při zdolávání <b>drž OK</b> = navíjení a <b>šipky</b> vedou prut. <span class="kr"></span> červené zapne / vypne navíjení, <span class="kg"></span> zelené = krmení, <span class="ky"></span> žluté = výbava, <span class="kb"></span> modré = menu. <b>CH ▲▼</b> hloubka / brzda, <b>1–5</b> rychlost navíjení, <b>Zpět</b> zavře okno. V oknech vybíráš šipkami a potvrzuješ OK. Ukazovátko Magic Remote funguje jako myš (OK = klik, kolečko = hloubka / brzda).</p>
+        </div>
+        <h4>Nahazování</h4>
+        <p>Podívej se, kam chceš nahodit, a <b>drž levé tlačítko</b>. Síla hodu roste (švihem myši nahoru rychleji), kroužek na vodě ukazuje místo dopadu, pohybem myši do stran míříš. <b>Puštěním tlačítka</b> uvolníš vlasec a montáž dopadne do kroužku. Modrý kroužek = voda, žlutý = rákosí, červený = břeh. Delší a lepší prut hodí dál.</p>
+        <h4>Čekání na záběr</h4>
+        <p><b>Kolečkem</b> nastavíš hloubku nástrahy. Je-li hloubka větší než dno, nástraha leží na dně a splávek se položí. Ťukání splávku = ryba ochutnává. Když se <b>ponoří, rozjede nebo zvedne a položí</b>, <b>klikni levým tlačítkem</b> – zásek (funguje i škubnutí prutem). Moc brzy = ryba se splaší, pozdě = sežere návnadu.</p>
+        <h4>Zdolávání</h4>
+        <p><b>Pravé tlačítko</b> navíjí, rychlost navíjení nastavíš klávesami <b>1–5</b> (nebo kolečkem při drženém pravém tlačítku). <b>Levé + myš</b> vede prut – zvedáním a stranou unavuješ rybu a odvracíš ji od rákosí. <b>Kolečko</b> mění brzdu: když tah přesáhne brzdu, naviják pouští vlasec. Přesáhne-li tah pevnost vlasce, praskne. Povolený vlasec = ryba se vyháčkuje. Unavenou rybu přitáhni ke břehu.</p>
+        <h4>Přívlač</h4>
+        <p>Nasaď třpytku nebo wobler ve výbavě [Tab]. Po nahození navíjej pravým tlačítkem, levým + myší cukej prutem. Dravci útočí na pohybující se nástrahu, po útoku klikni levým = zásek. Kliknutím bez záběru nástrahou cukneš.</p>
+        <h4>Ostatní</h4>
+        <p><b>WASD</b> chůze, <b>Shift</b> běh, myš rozhlížení. <b>E</b> u stánku = obchod, <b>F</b> = hodit příkrm k nástraze, <b>Tab</b> výbava, <b>J</b> deník ryb. Cena úlovku = výkupní cena × obtížnost zdolání.</p>
+        <h4>Nastavení</h4>
+        <label>Citlivost myši <input type="range" id="sensRange" min="0.4" max="2" step="0.05"></label>
+        <label>Hlasitost <input type="range" id="volRange" min="0" max="1" step="0.05"></label>
+        <button id="resetBtn" class="danger">Smazat postup a začít znovu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Úlovek -->
+  <div id="catchCard" class="overlay">
+    <div class="win catch">
+      <div class="catchTop">
+        <div><h2 id="catchTitle"></h2><i id="catchLatin"></i></div>
+        <div id="catchRecord"></div>
+      </div>
+      <canvas id="catchCanvas" width="620" height="300"></canvas>
+      <div class="hintSmall" id="catchRotHint">Táhni myší pro otočení ryby</div>
+      <div id="catchStats"></div>
+      <div id="catchBonus"></div>
+      <p id="catchDesc"></p>
+      <div id="catchPrice"></div>
+      <div class="catchBtns"><button id="releaseBtn">Pustit zpět</button><button id="sellBtn" class="primary">Prodat</button></div>
+    </div>
+  </div>
+
+  <div id="pause"><div>Klikni pro pokračování</div></div>
+
+  <!-- Menu (mobil ☰, televize modré tlačítko) -->
+  <div id="menuPanel" class="overlay">
+    <div class="win menu">
+      <div class="winHead"><h2>Menu</h2><button data-close>✕</button></div>
+      <div class="menuBtns">
+        <button data-act="close" class="primary">Pokračovat</button>
+        <button data-act="gear">Výbava</button>
+        <button data-act="journal">Rybářský deník</button>
+        <button data-act="feed">Zakrmit</button>
+        <button data-act="shop" id="menuShop">Nakoupit ve stánku</button>
+        <button data-act="help">Ovládání a nastavení</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading">
+    <h1>Rybník</h1>
+    <div class="loadBar"><div id="loadFill"></div></div>
+    <div id="loadText">Načítám…</div>
+  </div>
+
+  <div id="start">
+    <div class="startWin">
+      <h1>Rybník</h1>
+      <p class="tag">Rybářský simulátor u českého rybníka</p>
+      <ul class="dev-touch">
+        <li><b>Levý palec</b> – chůze · <b>tažení prstem</b> – rozhlížení</li>
+        <li><b>Drž Nahodit</b> – síla hodu, <b>pusť</b> – nahodit (tažením do stran míříš)</li>
+        <li><b>Zásek</b> při záběru · drž <b>Navíjet</b> · <b>− / +</b> hloubka / brzda</li>
+        <li><b>☰</b> menu – výbava, deník, krmení · u stánku ťukni na <b>Nakoupit</b></li>
+      </ul>
+      <ul class="dev-tv">
+        <li><b>←→</b> otáčení · <b>↑↓</b> chůze</li>
+        <li><b>Drž OK</b> – síla hodu, <b>pusť</b> – nahodit · <b>OK</b> při záběru – zásek</li>
+        <li>Při zdolávání <b>drž OK</b> = navíjení, <b>šipky</b> vedou prut · <span class="kr"></span> navíjení zap / vyp</li>
+        <li><b>CH ▲▼</b> hloubka / brzda · <span class="kg"></span> krmení · <span class="ky"></span> výbava · <span class="kb"></span> menu · <b>Zpět</b> zavřít</li>
+      </ul>
+      <ul class="dev-desktop">
+        <li><b>Drž levé tlačítko</b> – síla hodu, <b>pusť</b> – nahodit do kroužku</li>
+        <li><b>Klik levým</b> při záběru – zásek · <b>Pravé</b> – navíjení · <b>1–5</b> rychlost navíjení</li>
+        <li><b>Kolečko</b> – hloubka / brzda · <b>WASD</b> – chůze</li>
+        <li><b>E</b> u stánku – obchod · <b>Tab</b> výbava · <b>J</b> deník · <b>H</b> nápověda</li>
+      </ul>
+      <button id="playBtn" class="primary">Jdu na ryby</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/textures.js"></script>
+  <script src="js/sky.js"></script>
+  <script src="js/terrain.js"></script>
+  <script src="js/water.js"></script>
+  <script src="js/vegetation.js"></script>
+  <script src="js/fishdata.js"></script>
+  <script src="js/fishmodel.js"></script>
+  <script src="js/gear.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/rod.js"></script>
+  <script src="js/fishai.js"></script>
+  <script src="js/fishing.js"></script>
+  <script src="js/quests.js"></script>
+  <script src="js/birds.js"></script>
+  <script src="js/shop.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/controls.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
