@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Plachetnice 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<svg width="0" height="0" style="position:absolute"><defs><linearGradient id="wv" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#4fa3d9"/><stop offset="1" stop-color="#0b3d5c"/></linearGradient></defs></svg>
+
+<!-- ================= HUD ================= -->
+<div id="hud" class="hidden">
+  <div id="speedBox" class="glass">
+    <div class="lbl">Rychlost</div>
+    <div class="big"><span id="spd">0.0</span><small>kn</small></div>
+    <div class="row"><span>Maximum</span><b id="spdMax">–</b></div>
+    <div class="row"><span>VMG</span><b id="vmg">–</b></div>
+    <div class="row"><span>Kurz</span><b id="hdg">–</b></div>
+    <div class="row"><span>Snos</span><b id="leeway">–</b></div>
+    <div class="badges">
+      <span id="planing" class="badge plane">SKLUZ</span>
+      <span id="surfing" class="badge surf">SURF</span>
+      <span id="autoBadge" class="badge auto">AUTO-TRIM</span>
+      <span id="motorBadge" class="badge motor">MOTOR</span>
+      <span id="stallBadge" class="badge stall">KORMIDLO V PŘETAHU</span>
+    </div>
+  </div>
+
+  <div id="windBox" class="glass">
+    <canvas id="windCanvas" width="190" height="190"></canvas>
+    <div id="pos" class="pos">–</div>
+    <div class="tack" id="tackSide"></div>
+    <div class="row"><span><i class="dot tw"></i>Skutečný vítr</span><b id="tws">–</b></div>
+    <div class="row"><span>&nbsp;&nbsp;&nbsp;úhel TWA</span><b id="twaVal">–</b></div>
+    <div class="row"><span><i class="dot aw"></i>Zdánlivý vítr</span><b id="aws">–</b></div>
+    <div class="row"><span>&nbsp;&nbsp;&nbsp;úhel AWA</span><b id="awaVal">–</b></div>
+  </div>
+
+  <div id="raceBox" class="glass hidden">
+    <div class="race-time" id="raceTime">0:00.0</div>
+    <div class="race-next"><span id="raceArrow" class="race-arrow">▲</span><div><div id="raceNext">–</div><div id="raceDist" class="race-dist"></div></div></div>
+  </div>
+
+  <div id="toast"></div>
+  <div id="capsizeMsg" class="hidden" data-act="right">PŘEVRÁCENO!</div>
+  <canvas id="minimap" width="170" height="170" class="glass"></canvas>
+
+  <button id="topPause" class="icon-btn glass" data-act="pause" title="Pauza (P)"><span>❚❚</span></button>
+  <button id="topHelp" class="icon-btn glass" data-act="help" title="Nápověda (H)"><span>?</span></button>
+
+  <!-- ===== ovládací pult ===== -->
+  <div id="deck" class="glass">
+    <button id="deckToggle" class="deck-toggle" title="Skrýt/zobrazit pult">▾</button>
+    <div class="ctrl helm">
+      <label id="helmLabel">Kormidlo <kbd>A</kbd><kbd>D</kbd></label>
+      <canvas id="helm" width="220" height="104"></canvas>
+    </div>
+    <div class="ctrl sheet">
+      <label>Hlavní otěž <kbd>W</kbd><kbd>S</kbd></label>
+      <div class="sheet-wrap">
+        <div class="vslider" id="mainSheet"><div class="fill"></div><div class="knob"></div><em class="t">přitáhnout</em><em class="b">povolit</em></div>
+        <div class="sheet-info"><b id="mainSheetVal">–</b><span id="mainSheetTell" class="tell"></span></div>
+      </div>
+    </div>
+    <div class="ctrl sheet">
+      <label id="headLabel">Otěž kosatky <kbd>E</kbd><kbd>Q</kbd></label>
+      <div class="sheet-wrap">
+        <div class="vslider" id="headSheet"><div class="fill"></div><div class="knob"></div><em class="t">přitáhnout</em><em class="b">povolit</em></div>
+        <div class="sheet-info"><b id="headSheetVal">–</b><span id="headSheetTell" class="tell"></span></div>
+      </div>
+    </div>
+    <div class="ctrl heel">
+      <label>Náklon <b id="heelVal">0°</b></label>
+      <canvas id="heelCanvas" width="150" height="86"></canvas>
+    </div>
+    <div class="ctrl buttons">
+      <button data-act="spin"><span>Gennaker</span><kbd>G</kbd></button>
+      <button data-act="hike"><span>Trapéz</span><kbd>Mezerník</kbd></button>
+      <button data-act="board"><span>Meč</span><kbd>C</kbd></button>
+      <button data-act="reef"><span>Refování</span><kbd>R</kbd></button>
+      <button data-act="auto"><span>Auto-trim</span><kbd>T</kbd></button>
+      <button data-act="motor"><span>Motor</span><kbd>M</kbd></button>
+      <button data-act="cam"><span>Kamera</span><kbd>V</kbd></button>
+      <button data-act="reset"><span>Reset lodi</span><kbd>B</kbd></button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= MENU ================= -->
+<div id="menu" class="overlay">
+  <div class="menu-inner">
+    <header class="hero">
+      <div class="logo">⛵</div>
+      <div>
+        <h1>Plachetnice 3D</h1>
+        <p class="tag">Simulátor jachtingu v prohlížeči – skutečná aerodynamika plachet, skluz, vlny a poryvy.</p>
+      </div>
+    </header>
+    <section>
+      <h2><span>1</span> Vyber loď</h2>
+      <div id="boatCards" class="cards boats"></div>
+    </section>
+    <section>
+      <h2><span>2</span> Počasí</h2>
+      <div id="weatherCards" class="cards weathers"></div>
+    </section>
+    <section>
+      <h2><span>3</span> Režim</h2>
+      <div class="modes">
+        <button class="card mode" data-mode="free"><div class="card-title">🧭 Volná plavba</div><p>Pluj kam chceš, zkoušej kurzy, skluz a manévry.</p></button>
+        <button class="card mode" data-mode="race"><div class="card-title">🏁 Regata</div><p>Trať návětrná–závětrná: start, 2× návětrná bója, závětrná bója, cíl. Měří se čas.</p></button>
+      </div>
+      <div id="bestTime" class="best"></div>
+    </section>
+    <div class="menu-actions">
+      <button id="menuHelp" class="btn ghost">Ovládání a rady</button>
+      <button id="startBtn" class="btn primary">Vyplout ⛵</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= PAUZA ================= -->
+<div id="pause" class="overlay hidden">
+  <div class="panel glass">
+    <h2>Pauza</h2>
+    <label class="opt"><input type="checkbox" id="optCenter"> Kormidlo se samo vrací do středu</label>
+    <label class="opt"><input type="checkbox" id="optSound"> Zvuk (vítr, voda, plachty)</label>
+    <label class="opt"><input type="checkbox" id="optShadows"> Stíny</label>
+    <div class="menu-actions">
+      <button id="menuBtn" class="btn ghost">Hlavní menu</button>
+      <button id="resumeBtn" class="btn primary">Pokračovat</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= NÁPOVĚDA ================= -->
+<div id="help" class="overlay hidden">
+  <div class="panel glass wide">
+    <h2>Ovládání lodi</h2>
+    <div class="help-grid">
+      <div>
+        <h3>Ovládací prvky</h3>
+        <table>
+          <tr><td><kbd>A</kbd>/<kbd>D</kbd> nebo <kbd>←</kbd>/<kbd>→</kbd></td><td><b>Kormidlo</b> – zatáčení vlevo / vpravo. U skifu a 9m lodi pinna, u velké jachty kormidelní kolo (reaguje pomaleji).</td></tr>
+          <tr><td><kbd>W</kbd>/<kbd>S</kbd> nebo <kbd>↑</kbd>/<kbd>↓</kbd></td><td><b>Hlavní otěž</b> – přitáhnout / povolit hlavní plachtu (ráhno).</td></tr>
+          <tr><td><kbd>E</kbd>/<kbd>Q</kbd></td><td><b>Otěž přední plachty</b> – kosatka/janovka, nebo gennaker/spinakr, když je vytažený.</td></tr>
+          <tr><td><kbd>G</kbd></td><td><b>Gennaker / spinakr</b> – velká plachta na plavbu po větru (TWA > 90°).</td></tr>
+          <tr><td><kbd>Mezerník</kbd></td><td><b>Trapéz / posádka na hranu</b> – posádka se vyvěsí a vyrovná větší náklon.</td></tr>
+          <tr><td><kbd>C</kbd></td><td><b>Meč</b> (jen skif) – vytáhni po větru pro menší odpor, spusť na stoupání.</td></tr>
+          <tr><td><kbd>R</kbd></td><td><b>Refování</b> – zmenšení hlavní plachty v silném větru (kýlové lodě).</td></tr>
+          <tr><td><kbd>M</kbd></td><td><b>Motor</b> (kýlové lodě) – pomůže z bezvětří nebo z „ochrany“.</td></tr>
+          <tr><td><kbd>T</kbd></td><td><b>Auto-trim</b> – automatické nastavení otěží (pro začátečníky).</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Vztyčení převrhnutého skifu.</td></tr>
+          <tr><td><kbd>V</kbd>, myš, kolečko</td><td>Kamera: za lodí / orbit / kormidelník / shora / filmová. Tažením myši otáčíš, kolečkem přibližuješ, dvojklik = reset.</td></tr>
+          <tr><td><kbd>P</kbd>/<kbd>Esc</kbd>, <kbd>H</kbd>, <kbd>N</kbd>, <kbd>B</kbd></td><td>Pauza, nápověda, zvuk, reset lodi.</td></tr>
+        </table>
+      </div>
+      <div>
+        <h3>Jak plachtit</h3>
+        <ul>
+          <li><b>Přímo proti větru plout nelze</b> – do ~35° od větru jsi „v ochraně“ a loď se zastaví. Proti větru se křižuje: na ostro (~45°) a obraty.</li>
+          <li><b>Trim podle ukazatele:</b> „Třepetá“ = přitáhni otěž, „Přetaženo“ = povol. Nejrychleji jedeš, když je plachta těsně před třepetáním.</li>
+          <li>Na <b>bočák a zadobočák</b> povol otěže a vytáhni <b>gennaker</b> – je to nejrychlejší kurz.</li>
+          <li><b>Skluz (planing):</b> skif se na bočáku při větru nad ~10 uzlů vyhoupne na hladinu a zrychlí z 6 na 12–20 uzlů. Drž loď rovně (trapéz) a v poryvu povol hlavní otěž.</li>
+          <li><b>Náklon</b> sleduj na inklinometru – v červené zóně se skif převrhne a velká loď začne vybočovat proti větru.</li>
+          <li><b>Poryvy</b> jsou vidět jako tmavší skvrny na vodě. Šipky na přístroji: modrá = skutečný vítr, žlutá = zdánlivý.</li>
+          <li>Kormidlo nepřetáčej – nad ~15° náběhu se v proudu „utrhne“ a brzdí.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="menu-actions"><button id="helpClose" class="btn primary">Rozumím</button></div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
