@@ -69,8 +69,9 @@ function buildHull(spec) {
   const base = pos.length / 3;
   const s0 = sections[0];
   pos.push(0, s0.sheer * 0.6, -spec.L / 2); col.push(cTop.r, cTop.g, cTop.b);
-  for (const [x, y, c] of sternProfile) { pos.push(x, y, -spec.L / 2); col.push(c.r, c.g, c.b); }
+  for (const [x, y] of sternProfile) { pos.push(x, y, -spec.L / 2); col.push(cTop.r, cTop.g, cTop.b); }
   for (let j = 0; j < M - 1; j++) idx.push(base, base + 1 + j, base + 2 + j);
+  idx.push(base, base + M, base + 1); // uzavření horní hrany mezi rohy u paluby
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
