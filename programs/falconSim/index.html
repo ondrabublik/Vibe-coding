@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1d2a33" />
+    <title>Sokol – lov z výšin</title>
+    <link rel="stylesheet" href="./style.css?v=3" />
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs@7/babylon.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/babylonjs-materials@7/babylonjs.materials.min.js"></script>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="flash"></div>
+
+    <div id="hud" class="hidden">
+      <div id="markers"></div>
+      <div id="fpm" title="Směr letu"></div>
+      <div id="aim" title="Kam míříš myší"></div>
+
+      <div id="tl" class="panel">
+        <div class="row"><span>Skóre</span><b id="score">0</b></div>
+        <div class="row"><span>Úlovky</span><b id="catches">0</b></div>
+        <div class="row"><span>Série</span><b id="combo">×1.0</b></div>
+        <div id="carry"></div>
+      </div>
+
+      <div id="energyWrap" class="panel">
+        <div class="lbl"><span>Energie</span><b id="energyTxt">100</b></div>
+        <div class="bar"><i id="energy"></i></div>
+      </div>
+
+      <div id="flight" class="panel">
+        <div class="big"><b id="spd">0</b><small>km/h</small></div>
+        <div class="row"><span>Nad zemí</span><b id="agl">0 m</b></div>
+        <div class="row"><span>Stoupání</span><b id="vs">0 m/s</b></div>
+        <div class="row"><span>Křídla</span><b id="wing">rozepjatá</b></div>
+        <div id="thermal"></div>
+      </div>
+
+      <div id="mapWrap" class="panel"><canvas id="minimap" width="190" height="190"></canvas></div>
+      <div id="stick"><i></i><small>R = vycentrovat</small></div>
+      <div id="msg"></div>
+      <div id="toasts"></div>
+      <div id="hint"></div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="card">
+        <h1>Sokol <span>lov z výšin</span></h1>
+        <p class="lead">Jsi sokol stěhovavý – nejrychlejší tvor na planetě. Kroužíš nad údolím s jezerem, poli a lesy,
+          vyhlížíš holuby, špačky, kachny, koroptve, králíky, zajíce i hraboše. Nastoupej výšku v termice, sklop křídla
+          a střemhlav zaútoč rychlostí přes 300 km/h.</p>
+        <div id="loading">Generuji krajinu…</div>
+        <button id="startBtn" class="primary" disabled>Začít lov</button>
+        <div class="cols">
+          <div>
+            <h3>Ovládání</h3>
+            <table class="keys">
+              <tr><td><kbd>Myš</kbd> – míření</td><td>ukaž křížkem, kam letět – sokol se tam sám natočí</td></tr>
+              <tr><td><kbd>Myš</kbd> – joystick</td><td>do strany = úhel náklonu, nahoru/dolů = přitažení/potlačení, <kbd>R</kbd> = střed</td></tr>
+              <tr><td><kbd>J</kbd></td><td>přepnout režim myši (míření / joystick)</td></tr>
+              <tr><td><kbd>W</kbd>/<kbd>S</kbd></td><td>nos dolů / nahoru</td></tr>
+              <tr><td><kbd>A</kbd>/<kbd>D</kbd></td><td>náklon vlevo / vpravo</td></tr>
+              <tr><td><kbd>Q</kbd>/<kbd>E</kbd></td><td>zatočení (bočení)</td></tr>
+              <tr><td><kbd>Mezerník</kbd></td><td>mávání křídly / vzlet</td></tr>
+              <tr><td><kbd>Shift</kbd></td><td>střemhlavý let – přitisknutá křídla</td></tr>
+              <tr><td><kbd>X</kbd> / kolečko</td><td>napůl složená křídla / plynule</td></tr>
+              <tr><td><kbd>F</kbd></td><td>brzdění (vztyčení křídel a ocasu)</td></tr>
+              <tr><td><kbd>Levé tl.</kbd>/<kbd>T</kbd></td><td>vytasit pařáty</td></tr>
+              <tr><td><kbd>Pravé tl.</kbd>/<kbd>V</kbd></td><td>sokolí zrak (přiblížení)</td></tr>
+              <tr><td><kbd>G</kbd></td><td>pustit kořist</td></tr>
+              <tr><td><kbd>C</kbd></td><td>přepnout kameru</td></tr>
+              <tr><td><kbd>M</kbd> / <kbd>Esc</kbd></td><td>zvuk / pauza</td></tr>
+            </table>
+          </div>
+          <div>
+            <h3>Jak lovit</h3>
+            <ul class="tips">
+              <li>Kořist tě snáz přehlédne, když útočíš <b>shora a zezadu</b> ve střemhlavém letu.</li>
+              <li>Pařáty se vysunou samy, když se k cíli blížíš – stačí trefit.</li>
+              <li>Chycené ptáky neseš – <b>přistaň</b> (pod 45 km/h) a sněz je. V hnízdě na nejvyšším štítu je bonus ×2.</li>
+              <li>Na pozemní zvěř útoč pod 150 km/h, jinak se roztříštíš o zem.</li>
+              <li>Mávání stojí energii. Zdarma nastoupáš v <b>termikách</b> (stoupající chmýří, kroužky na mapě).</li>
+            </ul>
+            <h3>Nastavení</h3>
+            <div class="settings" id="settingsMenu"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="card narrow">
+        <h2>Pauza</h2>
+        <button id="resumeBtn" class="primary">Pokračovat</button>
+        <h3>Výzvy</h3>
+        <ul id="challengeList" class="challenges"></ul>
+        <h3>Statistiky</h3>
+        <div id="stats" class="stats"></div>
+        <h3>Nastavení</h3>
+        <div class="settings" id="settingsPause"></div>
+        <button id="restartBtn">Nová hra</button>
+      </div>
+    </div>
+
+    <script src="./js/util.js?v=3"></script>
+    <script src="./js/world.js?v=3"></script>
+    <script src="./js/falcon.js?v=3"></script>
+    <script src="./js/prey.js?v=3"></script>
+    <script src="./js/audio.js?v=3"></script>
+    <script src="./js/game.js?v=3"></script>
+  </body>
+</html>
