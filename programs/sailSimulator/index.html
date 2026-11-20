@@ -8,9 +8,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-<script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
-</script>
 </head>
 <body>
 <canvas id="c"></canvas>
@@ -180,6 +177,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<!-- sail.bundle.js generuje build.mjs ze zdrojů v js/ (funguje i přes file://) -->
+<script src="sail.bundle.js"></script>
 </body>
 </html>
