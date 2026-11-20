@@ -774,51 +774,59 @@ function hullSection(spec, s, P) {
 function buildHull(spec) {
   const P = hullParams(spec);
   const NS = 44, K = 10;
-  const halfPts = (sec) => {
-    const pts = [[sec.hb * 1.02, sec.sheer], [sec.hb, sec.sheer * 0.45]];
-    for (let j = 0; j <= K; j++) {
-      const a = (j / K) * Math.PI / 2;
-      const c = Math.cos(a), sn = Math.sin(a);
-      pts.push([sec.hb * Math.pow(c, 2 / P.n), Math.min(sec.sheer * 0.45, -sec.d * Math.pow(sn, 2 / P.n) + 0.0001 * j) * (j === 0 ? 0 : 1) + (j === 0 ? 0 : 0)]);
-    }
-    return pts;
-  };
-  const M = (K + 3) * 2 - 1;
-  const pos = [], col = [], idx = [];
   const cTop = new THREE.Color(spec.color), cStripe = new THREE.Color(spec.stripe);
   const cBottom = spec.id === 'skiff' ? new THREE.Color(0xe8e8e8) : new THREE.Color(0x7a1d1d);
   const cBoot = new THREE.Color(spec.stripe);
+  const hasBoot = spec.id !== 'skiff';
+  const stripeH = spec.deck * 0.12;
+  // půlprofil pravoboku (x > 0) od palubní hrany dolů ke kýlu: [x, y, barva];
+  // barevné přechody mají dvojice blízkých bodů, aby pruhy byly ostré
+  const halfPts = (sec) => {
+    const flare = (y) => sec.hb * (1 + 0.02 * clamp(y / sec.sheer, 0, 1));
+    const P2 = (y, c) => [flare(y), y, c];
+    const lift = Math.max(0, -sec.d); // u přídě se kýlová linie zvedá nad hladinu
+    const pts = [P2(sec.sheer, cStripe), P2(sec.sheer - stripeH, cStripe), P2(sec.sheer - stripeH - 0.01, cTop), P2(sec.sheer * 0.5, cTop)];
+    if (hasBoot) pts.push(P2(lift + 0.08, cTop), P2(lift + 0.07, cBoot), P2(lift + 0.005, cBoot));
+    else pts.push(P2(lift + 0.01, cTop));
+    for (let j = 0; j <= K; j++) {
+      const a = (j / K) * Math.PI / 2;
+      const c = Math.cos(a), sn = Math.sin(a);
+      pts.push([sec.hb * Math.pow(c, 2 / P.n), Math.min(lift - 0.005 - 0.0001 * j, -sec.d * Math.pow(sn, 2 / P.n)), cBottom]);
+    }
+    return pts;
+  };
+  const NP = halfPts(hullSection(spec, 0.5, P)).length;
+  const M = NP * 2 - 1;
+  const pos = [], col = [], idx = [];
   const sections = [];
+  let sternProfile = null;
   for (let i = 0; i <= NS; i++) {
     const s = i / NS;
     const sec = hullSection(spec, s, P);
     sections.push(sec);
     const z = -spec.L / 2 + s * spec.L;
     const hp = halfPts(sec);
-    const full = [...hp.map(([x, y]) => [x, y]), ...hp.slice(0, -1).reverse().map(([x, y]) => [-x, y])];
-    for (const [x, y] of full) {
-      pos.push(x, y, z);
-      let c = cTop;
-      if (y < -0.005) c = cBottom; else if (y < 0.06 && spec.id !== 'skiff') c = cBoot;
-      else if (y > sec.sheer - spec.deck * 0.12) c = cStripe;
-      col.push(c.r, c.g, c.b);
-    }
+    const full = [...hp, ...hp.slice(0, -1).reverse().map(([x, y, c]) => [-x, y, c])];
+    if (i === 0) sternProfile = full;
+    for (const [x, y, c] of full) { pos.push(x, y, z); col.push(c.r, c.g, c.b); }
   }
+  // pořadí vrcholů tak, aby normály mířily ven z trupu
   for (let i = 0; i < NS; i++) for (let j = 0; j < M - 1; j++) {
     const a = i * M + j, b = a + 1, c = a + M, d = c + 1;
-    idx.push(a, b, c, b, d, c);
+    idx.push(a, c, b, b, c, d);
   }
-  // záď (zrcadlo)
+  // záď (zrcadlo) – vlastní vrcholy, aby se nesdílely normály s boky
   const base = pos.length / 3;
   const s0 = sections[0];
   pos.push(0, s0.sheer * 0.6, -spec.L / 2); col.push(cTop.r, cTop.g, cTop.b);
-  for (let j = 0; j < M - 1; j++) idx.push(base, j + 1, j);
+  for (const [x, y, c] of sternProfile) { pos.push(x, y, -spec.L / 2); col.push(c.r, c.g, c.b); }
+  for (let j = 0; j < M - 1; j++) idx.push(base, base + 1 + j, base + 2 + j);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  const hull = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.05, side: THREE.DoubleSide }));
+  const hull = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.05 }));
   hull.castShadow = true; hull.receiveShadow = true;
 
   // paluba
@@ -826,12 +834,12 @@ function buildHull(spec) {
   for (let i = 0; i <= NS; i++) {
     const s = i / NS, sec = sections[i], z = -spec.L / 2 + s * spec.L;
     dp.push(sec.hb * 1.02, sec.sheer, z, -sec.hb * 1.02, sec.sheer, z);
-    if (i < NS) { const a = i * 2; di.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    if (i < NS) { const a = i * 2; di.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } // normála nahoru
   }
   const dg = new THREE.BufferGeometry();
   dg.setAttribute('position', new THREE.Float32BufferAttribute(dp, 3));
   dg.setIndex(di); dg.computeVertexNormals();
-  const deck = new THREE.Mesh(dg, new THREE.MeshStandardMaterial({ color: spec.deckColor, roughness: 0.85, side: THREE.DoubleSide }));
+  const deck = new THREE.Mesh(dg, new THREE.MeshStandardMaterial({ color: spec.deckColor, roughness: 0.85 }));
   deck.receiveShadow = true; deck.castShadow = false;
   return { hull, deck, sections, P };
 }
